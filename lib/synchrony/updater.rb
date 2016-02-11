@@ -30,7 +30,7 @@ module Synchrony
       start_date = Date.yesterday.strftime('%Y-%m-%d')
       offset = 0
 
-      while (issues = get_issues(start_date, offset: offset)) && issues.present?
+      while (issues = get_issues(start_date, :offset => offset)) && issues.present?
         Rails.logger.info "Site '#{source_site}' offset:#{offset} received #{issues.count} issues"
 
         issues.each do |remote_issue|
