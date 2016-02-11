@@ -106,19 +106,19 @@ module Synchrony
 
       attachments.each do |attachment|
         content_url = "#{attachment['content_url']}?key=#{api_key}"
+        file_path = "/tmp/redmine_attachment_#{attachment['id']}"
         begin
-          file = Tempfile.new(attachment['id'])
-          open(file.path, 'wb') do |file|
-            file << open(content_url).read
-          end
+          `wget -O #{file_path} #{content_url}`
+          file = File.open(file_path)
+
           a = Attachment.new(author: User.anonymous, file: file, filename: attachment['filename'])
           a.save!
           issue.attachments << a
         rescue => e
-          Rails.logger.info "Failed to download/save attachment id:#{attachment['id']} to issue:#{issue.id}"
+          Rails.logger.info "Failed to download/save attachment id:#{attachment['id']} to issue:#{issue.id} #{e.class}:#{e.message}"
         ensure
           file.close
-          file.delete
+          FileUtils.rm file_path
         end
       end
 
@@ -130,8 +130,8 @@ module Synchrony
       remote_issue.journals.each do |remote_journal|
         journal = issue.journals.where(synchrony_id: remote_journal.id).first
         unless journal.present?
-          notes = "h3. \"#{remote_journal.user.name}\":#{source_site}users/#{remote_journal.user.id}:\n\n" +
-              "#{journal_details(remote_journal)}#{remote_journal.notes}"
+          notes = "h3. \"#{remote_journal.user.name}\"\n" +
+            "#{journal_details(remote_journal)}#{remote_journal.notes}"
           Journal.transaction do
             journal = issue.journals.create(user: User.anonymous, notes: notes, synchrony_id: remote_journal.id)
             Journal.where(id: journal.id).update_all(created_on: Time.parse(remote_journal.created_on))
