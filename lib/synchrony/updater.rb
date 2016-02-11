@@ -130,7 +130,7 @@ module Synchrony
         content_url = "#{attachment['content_url']}?key=#{api_key}"
         file_path = "/tmp/redmine_attachment_#{attachment['id']}"
         begin
-          `wget -O #{file_path} #{content_url}`
+          `wget --no-check-certificate -O #{file_path} #{content_url}`
           file = File.open(file_path)
           if RUBY_VERSION == '1.8.7'
             def file.size
@@ -145,7 +145,6 @@ module Synchrony
         rescue => e
           Rails.logger.info "Failed to download/save attachment:#{attachment.inspect} remote_id:#{remote_issue.id} to issue:#{issue.id} #{e.class}:#{e.message}"
         ensure
-          file.close
           FileUtils.rm file_path
         end
       end
