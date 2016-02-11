@@ -91,7 +91,7 @@ module Synchrony
 
     def create_issue(remote_issue)
       description = remote_issue.description
-      Issue.create(
+      issue = Issue.create(
           :synchrony_id => remote_issue.id,
           :subject => remote_issue.subject,
           :description => description,
