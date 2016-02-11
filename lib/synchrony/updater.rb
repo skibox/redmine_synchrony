@@ -41,11 +41,11 @@ module Synchrony
 
     def prepare_remote_resources
       %w(Synchrony::RemoteTracker Synchrony::RemoteIssue Synchrony::RemoteIssueStatus
-                Synchrony::RemoteUser Synchrony::RemoteIssuePriority).each do |resource_class_name|
-        resource_class = resource_class_name.constantize
-        resource_class.site = source_site
-        resource_class.headers['X-Redmine-API-Key'] = api_key
-      end
+         Synchrony::RemoteUser Synchrony::RemoteIssuePriority).each do |resource_class_name|
+           resource_class = resource_class_name.constantize
+           resource_class.site = source_site
+           resource_class.headers['X-Redmine-API-Key'] = api_key
+         end
       begin
         unless source_tracker.present?
           raise Errors::InvalidSourceTrackerError.new(settings['source_tracker'], source_site)
@@ -90,8 +90,8 @@ module Synchrony
     end
 
     def create_issue(remote_issue)
-      description = "#{source_site}issues/#{remote_issue.id}\n\n________________\n\n#{remote_issue.description}"
-      Issue.create(
+      description = remote_issue.description
+      issue = Issue.create(
           synchrony_id: remote_issue.id,
           subject: remote_issue.subject,
           description: description,
@@ -100,6 +100,29 @@ module Synchrony
           author: User.anonymous,
           synchronized_at: Time.parse(remote_issue.updated_on)
       )
+      require 'open-uri'
+
+      attachments = Synchrony::RemoteIssue.find(remote_issue.id, params:{ include: 'attachments' }).attributes['attachments'].map(&:attributes)
+
+      attachments.each do |attachment|
+        content_url = "#{attachment['content_url']}?key=#{api_key}"
+        begin
+          file = Tempfile.new(attachment['id'])
+          open(file.path, 'wb') do |file|
+            file << open(content_url).read
+          end
+          a = Attachment.new(author: User.anonymous, file: file, filename: attachment['filename'])
+          a.save!
+          issue.attachments << a
+        rescue => e
+          Rails.logger.info "Failed to download/save attachment id:#{attachment['id']} to issue:#{issue.id}"
+        ensure
+          file.close
+          file.delete
+        end
+      end
+
+      issue
     end
 
     def update_journals(issue, remote_issue)
