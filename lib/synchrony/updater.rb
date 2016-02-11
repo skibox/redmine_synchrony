@@ -2,6 +2,8 @@ module Synchrony
 
   class Updater
 
+    LIMIT = 100
+
     attr_reader :settings
 
     def initialize(settings)
@@ -12,28 +14,52 @@ module Synchrony
       prepare_local_resources
     end
 
+    def get_issues(start_date, options = {})
+      params = {
+        :limit => LIMIT,
+        :tracker_id => source_tracker.id,
+        :status_id => '*',
+        :updated_on => ">=#{start_date}"
+      }
+      RemoteIssue.all(:params => params.merge(options))
+    end
+
     def sync_issues
       created_issues = 0
       updated_issues = 0
       start_date = Date.yesterday.strftime('%Y-%m-%d')
-      issues = RemoteIssue.all(:params => { :tracker_id => source_tracker.id, :status_id => '*',
-                                         :updated_on => ">=#{start_date}" })
-      issues.each do |remote_issue|
-        issue = Issue.where(:synchrony_id => remote_issue.id, :project_id => target_project).first
-        if issue.present?
-          remote_updated_on = Time.parse(remote_issue.updated_on)
-          if issue.synchronized_at != remote_updated_on
-            update_journals(issue, remote_issue)
-            issue.update_column(:synchronized_at, remote_updated_on)
+      offset = 0
+
+      while (issues = get_issues(start_date, offset: offset)) && issues.present?
+        Rails.logger.info "Site '#{source_site}' offset:#{offset} received #{issues.count} issues"
+
+        issues.each do |remote_issue|
+          case sync(remote_issue)
+          when :update
             updated_issues += 1
+          when :create
+            created_issues += 1
           end
-        else
-          issue = create_issue(remote_issue) unless issue.present?
-          update_journals(issue, remote_issue)
-          created_issues += 1
         end
+        offset += LIMIT
       end
       Rails.logger.info "Site '#{source_site}' issues created: #{created_issues}, issues updated: #{updated_issues}"
+    end
+
+    def sync(remote_issue)
+      issue = Issue.where(:synchrony_id => remote_issue.id, :project_id => target_project).first
+      if issue.present?
+        remote_updated_on = Time.parse(remote_issue.updated_on)
+        if issue.synchronized_at != remote_updated_on
+          update_journals(issue, remote_issue)
+          issue.update_column(:synchronized_at, remote_updated_on)
+          :update
+        end
+      else
+        issue = create_issue(remote_issue) unless issue.present?
+        update_journals(issue, remote_issue)
+        :create
+      end
     end
 
     private
@@ -89,8 +115,17 @@ module Synchrony
     end
 
     def create_issue(remote_issue)
-      attachments = Synchrony::RemoteIssue.find(remote_issue.id, :params => { :include => 'attachments' }).attributes['attachments'].map(&:attributes)
+      issue = Issue.create(
+        :synchrony_id => remote_issue.id,
+        :subject => remote_issue.subject,
+        :description => remote_issue.description,
+        :tracker => target_tracker,
+        :project => target_project,
+        :author => User.anonymous,
+        :synchronized_at => Time.parse(remote_issue.updated_on)
+      )
 
+      attachments = Synchrony::RemoteIssue.find(remote_issue.id, :params => { :include => 'attachments' }).attributes['attachments'].map(&:attributes)
       attachments.each do |attachment|
         content_url = "#{attachment['content_url']}?key=#{api_key}"
         file_path = "/tmp/redmine_attachment_#{attachment['id']}"
@@ -106,15 +141,6 @@ module Synchrony
           a = Attachment.new(:author => User.anonymous, :file => file, :filename => attachment['filename'])
           a.save!
 
-          issue = Issue.create(
-            :synchrony_id => remote_issue.id,
-            :subject => remote_issue.subject,
-            :description => remote_issue.description,
-            :tracker => target_tracker,
-            :project => target_project,
-            :author => User.anonymous,
-            :synchronized_at => Time.parse(remote_issue.updated_on)
-          )
           issue.attachments << a
         rescue => e
           Rails.logger.info "Failed to download/save attachment:#{attachment.inspect} remote_id:#{remote_issue.id} to issue:#{issue.id} #{e.class}:#{e.message}"
