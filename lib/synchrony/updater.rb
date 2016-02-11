@@ -92,7 +92,6 @@ module Synchrony
     def create_issue(remote_issue)
       attachments = Synchrony::RemoteIssue.find(remote_issue.id, :params => { :include => 'attachments' }).attributes['attachments'].map(&:attributes)
 
-      require 'open-uri'
       attachments.each do |attachment|
         content_url = "#{attachment['content_url']}?key=#{api_key}"
         file_path = "/tmp/redmine_attachment_#{attachment['id']}"
