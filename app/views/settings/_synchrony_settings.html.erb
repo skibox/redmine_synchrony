@@ -2,6 +2,8 @@
   <%= stylesheet_link_tag 'settings', plugin: 'redmine_synchrony' %>
   <%= javascript_include_tag 'settings', plugin: 'redmine_synchrony' %>
 <% end %>
+
+<a href="<%= redmine_synchrony_sync_all_path %>">Sync all</a>
 <%
    translations = {}.tap do |t|
      %w(source_site api_key source_tracker target_project target_tracker language).
