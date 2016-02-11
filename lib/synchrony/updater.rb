@@ -127,7 +127,7 @@ module Synchrony
 
       attachments = Synchrony::RemoteIssue.find(remote_issue.id, :params => { :include => 'attachments' }).attributes['attachments'].map(&:attributes)
       attachments.each do |attachment|
-        content_url = "#{attachment['content_url']}?key=#{api_key}"
+        content_url = "#{attachment['content_url']}?key=#{api_key}".gsub(/\(|\)/){|g| CGI.escape(g) }
         file_path = "/tmp/redmine_attachment_#{attachment['id']}"
         begin
           `wget --no-check-certificate -O #{file_path} #{content_url}`
