@@ -102,7 +102,7 @@ module Synchrony
       )
       require 'open-uri'
 
-      attachments = Synchrony::RemoteIssue.find(remote_issue.id, params:{ include: 'attachments' }).attributes['attachments'].map(&:attributes)
+      attachments = Synchrony::RemoteIssue.find(remote_issue.id, :params => { :include => 'attachments' }).attributes['attachments'].map(&:attributes)
 
       attachments.each do |attachment|
         content_url = "#{attachment['content_url']}?key=#{api_key}"
@@ -111,7 +111,7 @@ module Synchrony
           `wget -O #{file_path} #{content_url}`
           file = File.open(file_path)
 
-          a = Attachment.new(author: User.anonymous, file: file, filename: attachment['filename'])
+          a = Attachment.new(:author => User.anonymous, :file => file, :filename => attachment['filename'])
           a.save!
           issue.attachments << a
         rescue => e
