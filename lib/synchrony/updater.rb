@@ -2,8 +2,6 @@ module Synchrony
 
   class Updater
 
-    START_DATE = Date.yesterday.strftime('%Y-%m-%d')
-
     attr_reader :settings
 
     def initialize(settings)
@@ -17,8 +15,9 @@ module Synchrony
     def sync_issues
       created_issues = 0
       updated_issues = 0
+      start_date = Date.yesterday.strftime('%Y-%m-%d')
       issues = RemoteIssue.all(:params => { :tracker_id => source_tracker.id, :status_id => '*',
-                                         :updated_on => ">=#{START_DATE}" })
+                                         :updated_on => ">=#{start_date}" })
       issues.each do |remote_issue|
         issue = Issue.where(:synchrony_id => remote_issue.id, :project_id => target_project).first
         if issue.present?
