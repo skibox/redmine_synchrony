@@ -27,7 +27,7 @@ module Synchrony
     def sync_issues
       created_issues = 0
       updated_issues = 0
-      start_date = Date.yesterday.strftime('%Y-%m-%d')
+      start_date = Date.parse('2000-01-01') # Date.yesterday.strftime('%Y-%m-%d')
       offset = 0
 
       while (issues = get_issues(start_date, :offset => offset)) && issues.present?
