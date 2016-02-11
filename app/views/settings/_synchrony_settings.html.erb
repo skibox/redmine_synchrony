@@ -1,6 +1,6 @@
 <% content_for :header_tags do %>
-  <%= stylesheet_link_tag 'settings', plugin: 'redmine_synchrony' %>
-  <%= javascript_include_tag 'settings', plugin: 'redmine_synchrony' %>
+  <%= stylesheet_link_tag 'settings', :plugin => 'redmine_synchrony' %>
+  <%= javascript_include_tag 'settings', :plugin => 'redmine_synchrony' %>
 <% end %>
 
 <a href="<%= redmine_synchrony_sync_all_path %>">Sync all</a>
@@ -41,7 +41,7 @@
           </label>
           <%= select_tag 'settings[redmine][][target_project]',
                          options_from_collection_for_select(Project.all, 'id', 'name', redmine['target_project']),
-                         include_blank: true, id: "settings_redmine_#{index}_target_project", class: 'required' %>
+                         :include_blank => true, :id => "settings_redmine_#{index}_target_project", :class => 'required' %>
         </p>
         <p>
           <label for="settings_redmine_<%= index %>_target_tracker">
@@ -50,13 +50,13 @@
           </label>
           <%= select_tag 'settings[redmine][][target_tracker]',
                          options_from_collection_for_select(Tracker.all, 'id', 'name', redmine['target_tracker']),
-                         include_blank: true, id: "settings_redmine_#{index}_target_tracker", class: 'required' %>
+                         :include_blank => true, :id => "settings_redmine_#{index}_target_tracker", :class => 'required' %>
         </p>
         <p>
           <label for="settings_redmine_<%= index %>_language"><%= t('synchrony.settings.language') %></label>
           <%= select_tag 'settings[redmine][][language]',
                          options_for_select(lang_options_for_select, redmine['language']),
-                         id: "settings_redmine_#{index}_language" %>
+                         :id => "settings_redmine_#{index}_language" %>
         </p>
       </fieldset>
     <% end %>

@@ -17,10 +17,10 @@ module Synchrony
     def sync_issues
       created_issues = 0
       updated_issues = 0
-      issues = RemoteIssue.all(params: { tracker_id: source_tracker.id, status_id: '*',
-                                         updated_on: ">=#{START_DATE}" })
+      issues = RemoteIssue.all(:params => { :tracker_id => source_tracker.id, :status_id => '*',
+                                         :updated_on => ">=#{START_DATE}" })
       issues.each do |remote_issue|
-        issue = Issue.where(synchrony_id: remote_issue.id, project_id: target_project).first
+        issue = Issue.where(:synchrony_id => remote_issue.id, :project_id => target_project).first
         if issue.present?
           remote_updated_on = Time.parse(remote_issue.updated_on)
           if issue.synchronized_at != remote_updated_on
@@ -82,23 +82,23 @@ module Synchrony
     end
 
     def target_project
-      @target_project ||= Project.where(id: settings['target_project']).first
+      @target_project ||= Project.where(:id => settings['target_project']).first
     end
 
     def target_tracker
-      @target_tracker ||= Tracker.where(id: settings['target_tracker']).first
+      @target_tracker ||= Tracker.where(:id => settings['target_tracker']).first
     end
 
     def create_issue(remote_issue)
       description = remote_issue.description
-      issue = Issue.create(
-          synchrony_id: remote_issue.id,
-          subject: remote_issue.subject,
-          description: description,
-          tracker: target_tracker,
-          project: target_project,
-          author: User.anonymous,
-          synchronized_at: Time.parse(remote_issue.updated_on)
+      Issue.create(
+          :synchrony_id => remote_issue.id,
+          :subject => remote_issue.subject,
+          :description => description,
+          :tracker => target_tracker,
+          :project => target_project,
+          :author => User.anonymous,
+          :synchronized_at => Time.parse(remote_issue.updated_on)
       )
       require 'open-uri'
 
@@ -126,15 +126,15 @@ module Synchrony
     end
 
     def update_journals(issue, remote_issue)
-      remote_issue = RemoteIssue.find(remote_issue.id, params: {include: :journals})
+      remote_issue = RemoteIssue.find(remote_issue.id, :params => {:include => :journals})
       remote_issue.journals.each do |remote_journal|
-        journal = issue.journals.where(synchrony_id: remote_journal.id).first
+        journal = issue.journals.where(:synchrony_id => remote_journal.id).first
         unless journal.present?
           notes = "h3. \"#{remote_journal.user.name}\"\n" +
             "#{journal_details(remote_journal)}#{remote_journal.notes}"
           Journal.transaction do
-            journal = issue.journals.create(user: User.anonymous, notes: notes, synchrony_id: remote_journal.id)
-            Journal.where(id: journal.id).update_all(created_on: Time.parse(remote_journal.created_on))
+            journal = issue.journals.create(:user => User.anonymous, :notes => notes, :synchrony_id => remote_journal.id)
+            Journal.where(:id => journal.id).update_all(:created_on => Time.parse(remote_journal.created_on))
           end
         end
         issue.journals.reload

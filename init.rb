@@ -7,5 +7,5 @@ Redmine::Plugin.register :redmine_synchrony do
   version '0.0.5'
   url 'https://github.com/centosadmin/redmine_synchrony'
   author_url 'http://centos-admin.ru'
-  settings default: {'empty' => true}, partial: 'settings/synchrony_settings'
+  settings :default => {'empty' => true}, :partial => 'settings/synchrony_settings'
 end
