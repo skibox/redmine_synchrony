@@ -110,6 +110,11 @@ module Synchrony
         begin
           `wget -O #{file_path} #{content_url}`
           file = File.open(file_path)
+          if RUBY_VERSION == '1.8.7'
+            def file.size
+              File.size(self.path)
+            end
+          end
 
           a = Attachment.new(:author => User.anonymous, :file => file, :filename => attachment['filename'])
           a.save!
