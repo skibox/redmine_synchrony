@@ -90,20 +90,9 @@ module Synchrony
     end
 
     def create_issue(remote_issue)
-      description = remote_issue.description
-      issue = Issue.create(
-          :synchrony_id => remote_issue.id,
-          :subject => remote_issue.subject,
-          :description => description,
-          :tracker => target_tracker,
-          :project => target_project,
-          :author => User.anonymous,
-          :synchronized_at => Time.parse(remote_issue.updated_on)
-      )
-      require 'open-uri'
-
       attachments = Synchrony::RemoteIssue.find(remote_issue.id, :params => { :include => 'attachments' }).attributes['attachments'].map(&:attributes)
 
+      require 'open-uri'
       attachments.each do |attachment|
         content_url = "#{attachment['content_url']}?key=#{api_key}"
         file_path = "/tmp/redmine_attachment_#{attachment['id']}"
@@ -118,6 +107,16 @@ module Synchrony
 
           a = Attachment.new(:author => User.anonymous, :file => file, :filename => attachment['filename'])
           a.save!
+
+          issue = Issue.create(
+            :synchrony_id => remote_issue.id,
+            :subject => remote_issue.subject,
+            :description => remote_issue.description,
+            :tracker => target_tracker,
+            :project => target_project,
+            :author => User.anonymous,
+            :synchronized_at => Time.parse(remote_issue.updated_on)
+          )
           issue.attachments << a
         rescue => e
           Rails.logger.info "Failed to download/save attachment:#{attachment.inspect} remote_id:#{remote_issue.id} to issue:#{issue.id} #{e.class}:#{e.message}"
