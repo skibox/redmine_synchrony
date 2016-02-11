@@ -120,7 +120,7 @@ module Synchrony
           a.save!
           issue.attachments << a
         rescue => e
-          Rails.logger.info "Failed to download/save attachment id:#{attachment['id']} to issue:#{issue.id} #{e.class}:#{e.message}"
+          Rails.logger.info "Failed to download/save attachment:#{attachment.inspect} to issue:#{issue.id} #{e.class}:#{e.message}"
         ensure
           file.close
           FileUtils.rm file_path
