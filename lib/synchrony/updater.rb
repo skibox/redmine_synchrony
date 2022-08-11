@@ -1,10 +1,9 @@
 module Synchrony
 
   class Updater
-
-    LIMIT = 100
-
     attr_reader :settings
+
+    LIMIT = 50
 
     def initialize(settings)
       @settings = settings
