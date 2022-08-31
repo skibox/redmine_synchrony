@@ -13,28 +13,33 @@ module Synchrony
       prepare_local_resources
     end
 
-    def get_issues(start_date, options = {})
-      params = {
-        :limit => LIMIT,
-        :tracker_id => source_tracker.id,
-        :status_id => '*',
-        :updated_on => ">=#{start_date}"
-      }
-      RemoteIssue.all(:params => params.merge(options))
+    def self.default_date
+      Date.today
+    end
+
+    def sync_date
+      (last_sync_date || Synchrony::Updater.default_date).yesterday
+    end
+
+    def last_sync_date
+      Issue.pluck(:synchronized_at).compact.last
     end
 
     def sync_issues
       created_issues = 0
       updated_issues = 0
-      start_date = Date.parse('2000-01-01') # Date.yesterday.strftime('%Y-%m-%d')
-      offset = 0
 
-      while (issues = get_issues(start_date, :offset => offset)) && issues.present?
-        Rails.logger.info "Site '#{source_site}' offset:#{offset} received #{issues.count} issues"
-
-        issues.each do |remote_issue|
-          case sync(remote_issue)
-          when :update
+      issues = RemoteIssue.all(params: { tracker_id: source_tracker.id,
+                                         limit: LIMIT,
+                                         status_id: '*',
+                                         updated_on: ">=#{sync_date.strftime('%Y-%m-%d')}" })
+      issues.each do |remote_issue|
+        issue = Issue.where(synchrony_id: remote_issue.id, project_id: target_project).first
+        if issue.present?
+          remote_updated_on = Time.parse(remote_issue.updated_on)
+          if issue.synchronized_at != remote_updated_on
+            update_journals(issue, remote_issue)
+            issue.update_column(:synchronized_at, remote_updated_on)
             updated_issues += 1
           when :create
             created_issues += 1
@@ -64,12 +69,10 @@ module Synchrony
     private
 
     def prepare_remote_resources
-      %w(Synchrony::RemoteTracker Synchrony::RemoteIssue Synchrony::RemoteIssueStatus
-         Synchrony::RemoteUser Synchrony::RemoteIssuePriority).each do |resource_class_name|
-           resource_class = resource_class_name.constantize
-           resource_class.site = source_site
-           resource_class.headers['X-Redmine-API-Key'] = api_key
-         end
+      [RemoteTracker, RemoteIssue, RemoteIssueStatus, RemoteUser, RemoteIssuePriority].each do |resource_class|
+        resource_class.site = source_site
+        resource_class.headers['X-Redmine-API-Key'] = api_key
+      end
       begin
         unless source_tracker.present?
           raise Errors::InvalidSourceTrackerError.new(settings['source_tracker'], source_site)
