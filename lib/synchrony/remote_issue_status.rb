@@ -7,6 +7,10 @@ module Synchrony
     def self.by_id(id)
       RemoteIssueStatus.all.find{ |s| s.id == id }
     end
-  end
 
+    def self.by_name(name)
+      priorities = RemoteIssueStatus.all
+      priorities.find{ |s| s.name == name } if priorities.present?
+    end
+  end
 end

@@ -9,6 +9,10 @@ module Synchrony
       priorities = RemoteIssuePriority.all
       priorities.find{ |s| s.id == id } if priorities.present?
     end
-  end
 
+    def self.by_name(name)
+      priorities = RemoteIssuePriority.all
+      priorities.find{ |s| s.name == name } if priorities.present?
+    end
+  end
 end

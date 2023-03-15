@@ -5,6 +5,7 @@ en:
       source_site: "Source site"
       api_key: "API key"
       source_tracker: "Source tracker"
+      source_project: "Source project"
       target_project: "Local target project"
       target_tracker: "Local target tracker"
       language: "Language for notes"

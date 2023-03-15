@@ -118,6 +118,8 @@ $(function(){
         ).append(
           inputField('source_tracker', nextRedmine)
         ).append(
+          inputField('source_project', nextRedmine)
+        ).append(
           selectField('target_project', projects, nextRedmine, true)
         ).append(
           selectField('target_tracker', trackers, nextRedmine, true)
@@ -127,7 +129,7 @@ $(function(){
     );
   });
 
-  $('.delete-synchrony-site').live('click', function(event){
+  $('.delete-synchrony-site').click(function(event){
     event.preventDefault();
     $(this).closest('.synchrony-site-settings').remove();
   });
