@@ -10,15 +10,15 @@ class UpdaterTest < ActiveSupport::TestCase
     @remote_redmine_url = 'http://remote-redmine.org/'
     @source_tracker = OpenStruct.new(id: 4, name: 'Administration') # from fixtures
     fake_remote_redmine(@remote_redmine_url, @source_tracker)
-    @target_project = Project.find(1)
+    @local_project = Project.find(1)
     @target_tracker = Tracker.find(1)
     @valid_settings = {
-        'source_site' => @remote_redmine_url, 'api_key' => 'some_api_key', 'source_tracker' => @source_tracker.name,
-        'target_project' => @target_project.id.to_s, 'target_tracker' => @target_tracker.id.to_s
+        'target_site' => @remote_redmine_url, 'api_key' => 'some_api_key', 'source_tracker' => @source_tracker.name,
+        'local_project' => @local_project.id.to_s, 'target_tracker' => @target_tracker.id.to_s
     }
   end
 
-  %w(source_site api_key source_tracker target_project target_tracker).each do |setting|
+  %w(target_site api_key source_tracker local_project target_tracker).each do |setting|
     define_method("test_settings_with_blank_#{setting}") do
       invalid_settings = @valid_settings.dup
       invalid_settings.delete(setting)
@@ -32,7 +32,7 @@ class UpdaterTest < ActiveSupport::TestCase
     invalid_site = 'http://site-which-does-not-exist.local/'
     FakeWeb.register_uri(:get, "#{invalid_site}trackers.xml", exception: SocketError )
     invalid_settings = @valid_settings.dup
-    invalid_settings['source_site'] = invalid_site
+    invalid_settings['target_site'] = invalid_site
     assert_raises(Synchrony::Errors::InvalidSourceSiteError) do
       Synchrony::Updater.new(invalid_settings)
     end
@@ -59,10 +59,10 @@ class UpdaterTest < ActiveSupport::TestCase
   end
 
   def test_tracker_adds_to_project_when_it_not_added
-    @target_project.trackers.delete(@target_tracker)
+    @local_project.trackers.delete(@target_tracker)
     Synchrony::Updater.new(@valid_settings)
-    @target_project.reload
-    assert @target_project.trackers.include?(@target_tracker)
+    @local_project.reload
+    assert @local_project.trackers.include?(@target_tracker)
   end
 
   def test_issue_creating
@@ -83,7 +83,7 @@ class UpdaterTest < ActiveSupport::TestCase
   end
 
   def test_issue_updating
-    issue = Issue.where(project_id: @target_project.id).first
+    issue = Issue.where(project_id: @local_project.id).first
     issue.update_column(:synchrony_id, 1)
 
     journals_count_before = issue.journals.count

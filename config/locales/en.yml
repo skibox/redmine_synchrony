@@ -1,14 +1,30 @@
 en:
-
+  sync_issues: Sync all issues
   synchrony:
     settings:
-      source_site: "Source site"
+      settings: "Settings"
+      local_site: "Local site"
+      target_site: "Target site"
       api_key: "API key"
-      source_tracker: "Source tracker"
-      source_project: "Source project"
-      target_project: "Local target project"
-      target_tracker: "Local target tracker"
-      language: "Language for notes"
+      remote_cf_for_author: "Remote CF for Author ID"
+      remote_task_url: "Remote task URL ID"
+      synchronizable_switch: "Remote synchronizable switch ID"
+      local_default_assignee: "Local default assignee"
+      local_default_issue_status: "Local default issue status"
+      local_default_issue_priority: "Local default issue priority"
+      local_default_tracker: "Local default dracker"
+      local_tracker: "Local tracker"
+      local_project: "Local project"
+      local_issue_status: "Local issue status"
+      local_issue_priority: "Local issue prority"
+      target_project: "Target project"
+      target_tracker: "Target tracker"
+      target_trackers: "Target tracker mapping"
+      target_issue_status: "Target issue status"
+      target_issue_statuses: "Target issue status mapping"
+      target_issue_priority: "Target issue priority"
+      target_issue_priorities: "Target issue priority mapping"
+      sync: "Synchronize?"
     errors:
       messages:
         uniqueness: "must be uniqueness"

@@ -2,11 +2,7 @@ namespace :redmine_synchrony do
 
   desc 'Synchronize issues from remote redmine'
   task :issues => :environment do
-    if Setting.plugin_redmine_synchrony['redmine'].present?
-      Setting.plugin_redmine_synchrony['redmine'].each do |site_settings|
-        Synchrony::Updater.new(site_settings).sync_issues
-      end
-    end
+    site_settings = Setting.find_by(name: "plugin_redmine_synchrony")
+    Synchrony::Synchronize::Pull.new(site_settings).call
   end
-
 end

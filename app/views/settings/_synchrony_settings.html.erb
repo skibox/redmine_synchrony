@@ -4,60 +4,366 @@
 <% end %>
 <%
    translations = {}.tap do |t|
-     %w(source_site api_key source_tracker target_project target_tracker language).
-             each{ |k| t[k] = t("synchrony.settings.#{k}") }
-     t['button_delete'] = t('button_delete')
-     t['errors.blank'] = t('activerecord.errors.messages.blank')
+     %w(
+      local_site
+      target_site
+      api_key
+      local_project
+      local_tracker
+      local_issue_status
+      local_issue_priority
+      target_project
+      target_tracker
+      target_issue_status
+      target_issue_priority
+      ).each{ |k| t[k] = t("synchrony.settings.#{k}") }
+
+     t['button_delete']     = t('button_delete')
+     t['errors.blank']      = t('activerecord.errors.messages.blank')
      t['errors.uniqueness'] = t('synchrony.errors.messages.uniqueness')
    end.to_json
-   projects = {}.tap{ |p| Project.all.each{ |project| p[project.id] = project.name } }.to_json
-   trackers = {}.tap{ |t| Tracker.all.each{ |tracker| t[tracker.id] = tracker.name } }.to_json
-   languages = {}.tap{ |l| lang_options_for_select.each{ |lang| l[lang[1]] = lang[0] } }.to_json
+  
+   projects = Project
+                .joins(
+                  <<-SQL.squish
+                    JOIN issues
+                      ON issues.project_id = projects.id
+                    JOIN custom_values cv
+                      ON cv.customized_type = 'Issue'
+                      AND cv.customized_id = issues.id
+                      AND cv.value = '1'
+                    JOIN custom_fields cf
+                      ON cf.id = cv.custom_field_id
+                      AND cf.name = 'synchronizable'
+                  SQL
+                )
+                .group("projects.id")
+  
+   projects_data = {}.tap { |p| projects.each { |project| p[project.id] = project.name } }.to_json
+
+   trackers = Tracker.all
+   trackers_data = {}.tap { |p| trackers.each { |tracker| p[tracker.id] = tracker.name } }.to_json  
+
+   users = User
+            .select(
+              <<-SQL.squish
+                users.id,
+                users.firstname,
+                users.lastname,
+                cv.value AS remote_user_id
+              SQL
+              )
+            .joins(
+              <<-SQL.squish
+                LEFT JOIN custom_values cv
+                  ON cv.customized_type = 'Principal'
+                  AND cv.customized_id = users.id
+                LEFT JOIN custom_fields cf
+                  ON cf.id = cv.custom_field_id
+                  AND cf.name = 'Remote User ID'
+              SQL
+            )
+            .where.not(type: "AnonymousUser")
+            .order("users.lastname ASC, users.firstname ASC")
+   users_data = {}.tap { |p| users.each { |user| p[user.id] = user.name } }.to_json  
+
+   issue_statuses = IssueStatus.all
+   issue_statuses_data = {}.tap { |p| issue_statuses.each { |issue_status| p[issue_status.id] = issue_status.name } }.to_json
+
+   issue_priorities = IssuePriority.all
+   issue_priorities_data = {}.tap { |p| issue_priorities.each { |issue_priority| p[issue_priority.id] = issue_priority.name } }.to_json
+
+   setting = Setting.find_by(name: 'plugin_redmine_synchrony')
+   redmine = setting&.value
 %>
-<div id="synchrony-sites" data-i18n="<%= translations %>"
-     data-projects="<%= projects %>" data-trackers="<%= trackers %>" data-languages="<%= languages %>">
-  <% if settings['redmine'].present? %>
-    <% settings['redmine'].each_with_index do |redmine, index| %>
-      <fieldset class="box synchrony-site-settings">
-        <a href="#" class="icon icon-del contextual delete-synchrony-site"><%= t('button_delete') %></a>
-        <% %w(source_site api_key source_tracker source_project).each do |prop| %>
-          <p>
-            <label for="settings_redmine_<%= index %>_<%= prop %>">
-              <%= t("synchrony.settings.#{prop}") %>
-              <span class="required"> *</span>
-            </label>
-            <input type="text" size="60" class='required'
-                   id="settings_redmine_<%= index %>_<%= prop %>"
-                   name="settings[redmine][][<%= prop %>]"
-                   value="<%= redmine[prop] %>">
-          </p>
-        <% end %>
-        <p>
-          <label for="settings_redmine_<%= index %>_target_project">
-            <%= t('synchrony.settings.target_project') %>
-            <span class="required"> *</span>
-          </label>
-          <%= select_tag 'settings[redmine][][target_project]',
-                         options_from_collection_for_select(Project.all, 'id', 'name', redmine['target_project']),
-                         include_blank: true, id: "settings_redmine_#{index}_target_project", class: 'required' %>
-        </p>
-        <p>
-          <label for="settings_redmine_<%= index %>_target_tracker">
-            <%= t('synchrony.settings.target_tracker') %>
-            <span class="required"> *</span>
-          </label>
-          <%= select_tag 'settings[redmine][][target_tracker]',
-                         options_from_collection_for_select(Tracker.all, 'id', 'name', redmine['target_tracker']),
-                         include_blank: true, id: "settings_redmine_#{index}_target_tracker", class: 'required' %>
-        </p>
-        <p>
-          <label for="settings_redmine_<%= index %>_language"><%= t('synchrony.settings.language') %></label>
-          <%= select_tag 'settings[redmine][][language]',
-                         options_for_select(lang_options_for_select, redmine['language']),
-                         id: "settings_redmine_#{index}_language" %>
-        </p>
-      </fieldset>
+
+<div id="synchrony-sites"
+     data-i18n="<%= translations %>"
+     data-projects="<%= projects_data %>"
+     data-trackers="<%= trackers_data %>"
+     data-users="<%= users_data%>"
+     data-issue-statuses="<%= issue_statuses_data %>"
+     data-issue-priorities="<%= issue_priorities_data %>" 
+>
+  <fieldset class="box synchrony-site-settings">
+    <% %w(
+          local_site
+          target_site
+          api_key
+          remote_cf_for_author
+          remote_task_url
+          synchronizable_switch
+        ).each do |prop| %>
+      <p style="padding-left: 0px">
+        <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_<%= prop %>">
+          <%= t("synchrony.settings.#{prop}") %>
+        </label>
+        <input type="text" size="60" class='required'
+                id="settings_redmine_<%= prop %>"
+                name="settings[<%= prop %>]"
+                value="<%= redmine[prop] if redmine %>">
+      </p>
     <% end %>
-  <% end %>
+
+    <br>
+
+    <p style="padding-left: 0px">
+      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_assignee">
+        <%= t('synchrony.settings.local_default_assignee') %>
+      </label>
+      <%= select_tag 'settings[local_default_assignee]',
+                      options_from_collection_for_select(users, 'id', 'name', redmine ? redmine['local_default_assignee'] : nil),
+                      style: "width: 300px;",
+                      include_blank: true, id: "settings_redmine_local_default_assignee", class: 'required' %>
+    </p>
+
+    <p style="padding-left: 0px">
+      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_issue_status">
+        <%= t('synchrony.settings.local_default_issue_status') %>
+      </label>
+      <%= select_tag 'settings[local_default_issue_status]',
+                      options_from_collection_for_select(issue_statuses, 'id', 'name', redmine ? redmine['local_default_issue_status'] : nil),
+                      style: "width: 300px;",
+                      include_blank: true, id: "settings_redmine_local_default_issue_status", class: 'required' %>
+    </p>
+
+    <p style="padding-left: 0px">
+      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_issue_priority">
+        <%= t('synchrony.settings.local_default_issue_priority') %>
+      </label>
+      <%= select_tag 'settings[local_default_issue_priority]',
+                      options_from_collection_for_select(issue_priorities, 'id', 'name', redmine ? redmine['local_default_issue_priority'] : nil),
+                      style: "width: 300px;",
+                      include_blank: true, id: "settings_redmine_local_default_issue_priority", class: 'required' %>
+    </p>
+
+    <p style="padding-left: 0px">
+      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_tracker">
+        <%= t('synchrony.settings.local_default_tracker') %>
+      </label>
+      <%= select_tag 'settings[local_default_tracker]',
+                      options_from_collection_for_select(trackers, 'id', 'name', redmine ? redmine['local_default_tracker'] : nil),
+                      style: "width: 300px;",
+                      include_blank: true, id: "settings_redmine_local_default_tracker", class: 'required' %>
+    </p>
+
+    <br>
+    <p style="text-align: left; padding-left: 0px">Remote User IDs:</p>
+    <% users.each do |user| %>
+      <p style="padding-left: 0px">
+        <label style="margin-left: 0px; width: 150px; text-align: left" >
+          <%= user.name %>
+        </label>
+        <label>
+          <%= user.remote_user_id %>
+        </label>
+      </p>
+    <% end %>
+
+    <br>
+
+    <table>
+      <tr>
+        <p style="text-align: left; padding-left: 0px">Project mapping:</p>
+      </tr>
+      <tr>
+        <th>
+          <%= t('synchrony.settings.local_project') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.target_project') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.sync') %>
+        </th>
+      </tr>
+      <% projects.each_with_index do |project, project_index|%>
+      <tr>
+        <%- current_target_project = redmine&.dig('projects_set', project_index) %>
+        <th>
+          <input type="text"
+                  class='hidden'
+                  id="settings_redmine_projects_set_local_project_<%= project_index %>"
+                  name="settings[projects_set][][local_project]"
+                  value="<%= project.name %>">
+          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= project.name %></label>
+        </th>
+        <th>
+          <input type="text" size="60" class='required'
+                id="settings_redmine_projects_set_target_project_<%= project_index %>"
+                name="settings[projects_set][][target_project]"
+                value="<%= current_target_project ? current_target_project["target_project"] : ""%>">
+        </th>
+        <th>
+          <input type="checkbox" size="60" class='required checkboxes'
+                id="settings_redmine_projects_set_sync_<%= project_index %>"
+                name="settings[projects_set][][sync]"
+                value="true"
+                <%=
+                  if current_target_project.present?
+                    current_target_project["sync"] == "true" ? "checked" : ""
+                  else
+                    "checked"
+                  end
+                %>
+          >
+        </th>
+      </tr>
+      <% end %>
+    </table>
+
+    <br>
+
+    <table>
+      <tr>
+        <p style="text-align: left; padding-left: 0px">Tracker mapping:</p>
+      </tr>
+      <tr>
+        <th>
+          <%= t('synchrony.settings.local_tracker') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.target_tracker') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.sync') %>
+        </th>
+      </tr>
+      <% trackers.each_with_index do |tracker, tracker_index|%>
+      <tr>
+        <%- current_target_tracker = redmine&.dig('trackers_set', tracker_index) %>
+        <th>
+          <input class='hidden'
+                id="settings_redmine_trackers_set_local_tracker_<%= tracker_index %>"
+                name="settings[trackers_set][][local_tracker]"
+                value="<%= tracker.name %>">
+          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= tracker.name %></label>
+        </th>
+        <th>
+          <input type="text" size="60" class='required'
+                id="settings_redmine_trackers_set_target_tracker_<%= tracker_index %>"
+                name="settings[trackers_set][][target_tracker]"
+                value="<%= current_target_tracker ? current_target_tracker["target_tracker"] : ""%>">
+        </th>
+        <th>
+          <input type="checkbox" size="60" class='required checkboxes'
+                id="settings_redmine_trackers_set_sync_<%= tracker_index %>"
+                name="settings[trackers_set][][sync]"
+                value="true"
+                <%=
+                  if current_target_tracker.present?
+                    current_target_tracker["sync"] == "true" ? "checked" : ""
+                  else
+                    "checked"
+                  end
+                %>
+          >
+        </th>
+      </tr>
+      <% end %>
+    </table>
+
+    <br>
+
+    <table>
+      <tr>
+        <p style="text-align: left; padding-left: 0px">Issue statuses mapping:</p>
+      </tr>
+      <tr>
+        <th>
+          <%= t('synchrony.settings.local_issue_status') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.target_issue_status') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.sync') %>
+        </th>
+      </tr>
+      <% issue_statuses.each_with_index do |issue_status, issue_status_index|%>
+      <tr>
+        <%- current_target_issue_status = redmine&.dig('issue_statuses_set', issue_status_index) %>
+        <th>
+          <input class='hidden'
+                id="settings_redmine_issue_statuses_set_local_issue_status_<%= issue_status_index %>"
+                name="settings[issue_statuses_set][][local_issue_status]"
+                value="<%= issue_status.name %>">
+          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= issue_status.name %></label>
+        </th>
+        <th>
+          <input type="text" size="60" class='required'
+                id="settings_redmine_issue_statuses_set_target_issue_status_<%= issue_status_index %>"
+                name="settings[issue_statuses_set][][target_issue_status]"
+                value="<%= current_target_issue_status ? current_target_issue_status["target_issue_status"] : ""%>">
+        </th>
+        <th>
+          <input type="checkbox" size="60" class='required checkboxes'
+                id="settings_redmine_issue_status_set_sync_<%= issue_status_index %>"
+                name="settings[issue_statuses_set][][sync]"
+                value="true"
+                <%=
+                  if current_target_issue_status.present?
+                    current_target_issue_status["sync"] == "true" ? "checked" : ""
+                  else
+                    "checked"
+                  end
+                %>
+          >
+        </th>
+      </tr>
+      <% end %>
+    </table>
+
+    <br>
+
+    <table>
+      <tr>
+        <p style="text-align: left; padding-left: 0px">Issue priorities mapping:</p>
+      </tr>
+      <tr>
+        <th>
+          <%= t('synchrony.settings.local_issue_priority') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.target_issue_priority') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.sync') %>
+        </th>
+      </tr>
+      <% issue_priorities.each_with_index do |issue_priority, issue_priority_index|%>
+      <tr>
+        <%- current_target_issue_priority = redmine&.dig('issue_priorities_set', issue_priority_index) %>
+        <th>
+          <input class='hidden'
+                id="settings_redmine_issue_priorities_set_local_issue_priority_<%= issue_priority_index %>"
+                name="settings[issue_priorities_set][][local_issue_priority]"
+                value="<%= issue_priority.name %>">
+          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= issue_priority.name %></label>
+        </th>
+        <th>
+          <input type="text" size="60" class='required'
+                id="settings_redmine_issue_priorities_set_target_issue_priority_<%= issue_priority_index %>"
+                name="settings[issue_priorities_set][][target_issue_priority]"
+                value="<%= current_target_issue_priority ? current_target_issue_priority["target_issue_priority"] : ""%>">
+        </th>
+        <th>
+          <input type="checkbox" size="60" class='required checkboxes'
+                id="settings_redmine_issue_priorities_set_sync_<%= issue_priority_index %>"
+                name="settings[issue_priorities_set][][sync]"
+                value="true"
+                <%=
+                  if current_target_issue_priority.present?
+                    current_target_issue_priority["sync"] == "true" ? "checked" : ""
+                  else
+                    "checked"
+                  end
+                %>
+          >
+        </th>
+      </tr>
+      <% end %>
+    </table>
+
+  </fieldset>
 </div>
-<a href='#' class='icon icon-add add-synchrony-site'><%= t('button_add') %></a>

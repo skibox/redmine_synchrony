@@ -3,7 +3,8 @@ $(function(){
   var translations = properties.data('i18n')
   var projects = properties.data('projects')
   var trackers = properties.data('trackers')
-  var languages = properties.data('languages')
+  var issueStatuses = properties.data('issue-statuses')
+  var issuePriorities = properties.data('issue-priorities')
 
   var label = function(field_name, nextId, required){
     if(typeof(required)==='undefined') required = false;
@@ -65,7 +66,7 @@ $(function(){
   var validateProjectUniqueness = function() {
     var errorCount = 0;
     var projects = [];
-    $('select[name="settings[redmine][][target_project]"]').each(function(){
+    $('select[name="settings[redmine][][projects_set][][local_project]"]').each(function(){
       var $this = $(this);
       var project = $this.val();
       var existProjectIndex = $.inArray(project, projects);
@@ -74,7 +75,7 @@ $(function(){
         if(!errorDisplayed($this)) {
           displayError($this, translations['errors.uniqueness']);
         }
-        var existProjectSelect = $($('select[name="settings[redmine][][target_project]"]')[existProjectIndex]);
+        var existProjectSelect = $($('select[name="settings[redmine][][projects_set][][local_project]"]')[existProjectIndex]);
         if(!errorDisplayed(existProjectSelect)) {
           displayError(existProjectSelect, translations['errors.uniqueness']);
         }
@@ -112,19 +113,13 @@ $(function(){
               translations['button_delete'] + '</a>'
           )
         ).append(
-          inputField('source_site', nextRedmine)
+          inputField('target_site', nextRedmine)
         ).append(
           inputField('api_key', nextRedmine)
         ).append(
-          inputField('source_tracker', nextRedmine)
+          inputField('target_project', nextRedmine)
         ).append(
-          inputField('source_project', nextRedmine)
-        ).append(
-          selectField('target_project', projects, nextRedmine, true)
-        ).append(
-          selectField('target_tracker', trackers, nextRedmine, true)
-        ).append(
-          selectField('language', languages, nextRedmine)
+          selectField('local_project', projects, nextRedmine, true)
         )
     );
   });
@@ -135,6 +130,13 @@ $(function(){
   });
 
   $('#settings form').submit(function(event){
+    var checkboxes = $(this).find(".checkboxes")
+
+    for(checkbox of checkboxes) {
+      checkbox.checked ? checkbox.value = "true" : checkbox.value = "false";
+    };
+
+    // todo: fix validation
     if(validatePresence() && validateProjectUniqueness()) {
       $(this).off('submit');
       $(this).trigger('submit');

@@ -4,6 +4,7 @@ module Synchrony
     self.format = :xml
     self.element_name = 'issue_priority'
     self.prefix = '/enumerations/'
+    self.timeout = 5
 
     def self.by_id(id)
       priorities = RemoteIssuePriority.all
