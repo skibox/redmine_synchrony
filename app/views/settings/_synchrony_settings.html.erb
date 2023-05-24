@@ -75,7 +75,18 @@
 
    setting = Setting.find_by(name: 'plugin_redmine_synchrony')
    redmine = setting&.value
+
+   all_custom_fields = CustomField.all
+
+   custom_fields = all_custom_fields.select do |cf|
+      %w[bool int link list string text user].include?(cf.field_format) &&
+      ["synchronizable", "Remote User ID"].exclude?(cf.name)
+    end
 %>
+
+<div>
+  <a href="<%= redmine_synchrony_pull_path %>" class='icon icon-download'>Pull issues</a>
+</div>
 
 <div id="synchrony-sites"
      data-i18n="<%= translations %>"
@@ -355,6 +366,57 @@
                 <%=
                   if current_target_issue_priority.present?
                     current_target_issue_priority["sync"] == "true" ? "checked" : ""
+                  else
+                    "checked"
+                  end
+                %>
+          >
+        </th>
+      </tr>
+      <% end %>
+    </table>
+
+    <br>
+
+    <table>
+      <tr>
+        <p style="text-align: left; padding-left: 0px">Custom fields mapping:</p>
+      </tr>
+      <tr>
+        <th>
+          <%= t('synchrony.settings.local_custom_field') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.target_custom_field') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.sync') %>
+        </th>
+      </tr>
+      <% custom_fields.each_with_index do |custom_field, custom_field_index|%>
+      <tr>
+        <%- current_target_custom_field = redmine&.dig('custom_fields_set', custom_field_index) %>
+        <th>
+          <input class='hidden'
+                id="settings_redmine_custom_fields_set_local_custom_field_<%= custom_field_index %>"
+                name="settings[custom_fields_set][][local_custom_field]"
+                value="<%= custom_field.name %>">
+          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= custom_field.name %></label>
+        </th>
+        <th>
+          <input type="text" size="60" class='required'
+                id="settings_redmine_custom_fields_set_target_custom_field_<%= custom_field_index %>"
+                name="settings[custom_fields_set][][target_custom_field]"
+                value="<%= current_target_custom_field ? current_target_custom_field["target_custom_field"] : ""%>">
+        </th>
+        <th>
+          <input type="checkbox" size="60" class='required checkboxes'
+                id="settings_redmine_custom_fields_set_sync_<%= custom_field_index %>"
+                name="settings[custom_fields_set][][sync]"
+                value="true"
+                <%=
+                  if current_target_custom_field.present?
+                    current_target_custom_field["sync"] == "true" ? "checked" : ""
                   else
                     "checked"
                   end

@@ -86,6 +86,8 @@ module Synchrony
         prepare_remote_resources
 
         pull_issues
+        Synchrony::Logger.info "PULLING FINISHED"
+        Synchrony::Logger.info "====================================================="
       rescue ActiveResource::TimeoutError => e
         Synchrony::Logger.info "Timeout error: #{e.message}"
       end
@@ -132,6 +134,10 @@ module Synchrony
         @our_trackers ||= Tracker.all
       end
 
+      def our_custom_fields
+        @our_custom_fields ||= CustomField.all
+      end
+
       def remote_user_id_cf
         @remote_user_id_cf ||= CustomField.find_by(
           name: "Remote User ID",
@@ -170,6 +176,12 @@ module Synchrony
       def issue_priority_data(issue)
         site_settings[:issue_priorities_set].detect do |s|
           s[:target_issue_priority] == issue.priority.name
+        end
+      end
+
+      def custom_field_data(custom_field)
+        site_settings[:custom_fields_set].detect do |s|
+          s[:target_custom_field] == custom_field.name
         end
       end
 
@@ -269,7 +281,7 @@ module Synchrony
 
           if project_remote_issues.blank?
             Synchrony::Logger.info "Project '#{project_data[:target_project]}' has no synchronizable issues"
-            Synchrony::Logger.info ""
+            Synchrony::Logger.info "---"
 
             next
           end
@@ -361,6 +373,127 @@ module Synchrony
 
             remote_updated_on = Time.zone.parse(remote_issue.updated_on)
 
+            custom_fields = [
+              { id: synchronizable_switch_id, value: "1" },
+            ]
+
+            # Custom fields matching
+
+            excluded_remote_custom_field_ids = [
+              site_settings[:remote_cf_for_author],
+              site_settings[:synchronizable_switch],
+              site_settings[:remote_task_url],
+            ]
+
+            remote_issue.custom_fields.each do |remote_cf|
+              next if excluded_remote_custom_field_ids.include?(remote_cf.id.to_s)
+
+              our_custom_field = our_custom_fields.detect do |ocf|
+                ocf.name == custom_field_data(remote_cf)&.dig(:local_custom_field)
+              end
+
+              if our_custom_field.blank?
+                Synchrony::Logger.info "Custom field from remote '#{remote_cf.name}' not found on #{site_settings[:local_site]}. Skipping."
+                Synchrony::Logger.info ""
+
+                next
+              end
+
+              next unless custom_field_synchronizable?(our_custom_field)
+
+              if our_custom_field.possible_values.present?
+                if our_custom_field.multiple
+                  if remote_cf.value.is_a?(Array)
+                    common_values = our_custom_field.possible_values & remote_cf.value
+
+                    custom_fields << { id: our_custom_field.id, value: common_values.any? ? common_values : nil }
+                  else
+                    Synchrony::Logger.info "Local custom field #{our_custom_field.name} is an array."
+                    Synchrony::Logger.info "Skipping due to non-array value #{remote_cf.value}"
+                    Synchrony::Logger.info ""
+
+                    next
+                  end
+                elsif our_custom_field.possible_values.include?(remote_cf.value)
+                  custom_fields << { id: our_custom_field.id, value: remote_cf.value }
+                elsif our_custom_field.possible_values.exclude?(remote_cf.value)
+                  Synchrony::Logger.info "Value (#{remote_cf.value}) for custom field #{remote_cf.name} is not in possible values. Skipping."
+                  Synchrony::Logger.info ""
+
+                  next
+                else
+                  Synchrony::Logger.info "Local custom field #{our_custom_field.name} is not an array."
+                  Synchrony::Logger.info "Skipping due to array value #{remote_cf.value}"
+                  Synchrony::Logger.info ""
+
+                  next
+                end
+              elsif our_custom_field.field_format == "user" && our_custom_field.multiple
+                if remote_cf.value.is_a?(Array)
+                  principals = principal_custom_values.select do |pcv|
+                    remote_cf.value.include?(pcv.value)
+                  end
+
+                  user_ids = principals.filter_map(&:customized_id)
+
+                  users = User.where(id: user_ids)
+
+                  custom_fields << { id: our_custom_field.id, value: users.pluck(:id) }
+                else
+                  Synchrony::Logger.info "Remote value for custom field #{remote_cf.name} is not an array. Skipping."
+                  Synchrony::Logger.info ""
+
+                  next
+                end
+              elsif our_custom_field.field_format == "user"
+                if remote_cf.value.is_a?(Array)
+                  Synchrony::Logger.info "Remote value for custom field #{remote_cf.name} is an array. Skipping."
+                  Synchrony::Logger.info ""
+
+                  next
+                else
+                  principal = principal_custom_values.detect do |pcv|
+                    remote_cf.value.include?(pcv.value)
+                  end
+
+                  user = User.find_by(id: principal&.customized_id)
+
+                  next if user.blank?
+
+                  custom_fields << { id: our_custom_field.id, value: user.id }
+                end
+              elsif custom_field_string_validation?(our_custom_field)
+                regexp     = our_custom_field.regexp.presence
+                min_length = our_custom_field.min_length.presence
+                max_length = our_custom_field.max_length.presence
+
+                regexp_matches     = regexp.blank? || (regexp.present? && remote_cf.value.match?(Regexp.new(regexp)))
+                min_length_matches = min_length.blank? || (min_length.present? && remote_cf.value.length >= min_length.to_i)
+                max_length_matches = max_length.blank? || (max_length.present? && remote_cf.value.length <= max_length.to_i)
+
+                if regexp.present? && !regexp_matches
+                  Synchrony::Logger.info "Value for custom field #{remote_cf.name} does not match regexp. Skipping."
+                  Synchrony::Logger.info ""
+                end
+
+                if min_length.present? && !min_length_matches
+                  Synchrony::Logger.info "Value for custom field #{remote_cf.name} is too short. Skipping."
+                  Synchrony::Logger.info ""
+                end
+
+                if max_length.present? && !max_length_matches
+                  Synchrony::Logger.info "Value for custom field #{remote_cf.name} is too long. Skipping."
+                  Synchrony::Logger.info ""
+                end
+
+                next if !regexp_matches || !min_length_matches || !max_length_matches
+
+                custom_fields << { id: our_custom_field.id, value: remote_cf.value }
+              else
+                custom_fields << { id: our_custom_field.id, value: remote_cf.value }
+              end
+            end
+
             attributes = {}
 
             attributes[:skip_synchronization] = true
@@ -377,9 +510,7 @@ module Synchrony
             attributes[:priority_id]          = issue_priority_id
             attributes[:assigned_to_id]       = assigned_to_id
             attributes[:author_id]            = author_id
-            attributes[:custom_fields]        = [
-              { id: synchronizable_switch_id, value: "1" },
-            ]
+            attributes[:custom_fields]        = custom_fields
 
             if our_issue.present?
               if our_issue.synchronized_at == remote_updated_on
@@ -396,9 +527,9 @@ module Synchrony
                 our_issue.update!(**attributes)
               rescue ActiveRecord::RecordInvalid
                 Synchrony::Logger.info "Issue author and assignee replaced with default user."
-                Synchrony::Logger.info "Please add user #{new_issue.author.name} and #{new_issue.assigned_to.name} " \
+                Synchrony::Logger.info "Please add user #{our_issue.author.name} and #{our_issue.assigned_to.name} " \
                                        "to project members"
-                                       Synchrony::Logger.info ""
+                Synchrony::Logger.info ""
 
                 attributes[:author_id] = local_default_user_id
                 attributes[:assigned_to_id] = local_default_user_id
@@ -416,7 +547,7 @@ module Synchrony
                 Synchrony::Logger.info "Issue author and assignee replaced with default user."
                 Synchrony::Logger.info "Please add user #{new_issue.author.name} and #{new_issue.assigned_to.name} " \
                                        "to project members"
-                                       Synchrony::Logger.info ""
+                Synchrony::Logger.info ""
 
                 new_issue.author_id = local_default_user_id
                 new_issue.assigned_to_id = local_default_user_id
@@ -433,11 +564,30 @@ module Synchrony
             Synchrony::Logger.info ""
           end
 
-          Synchrony::Logger.info "---"
           Synchrony::Logger.info "Project '#{project_data[:local_project]}' issues created: #{created_issues}, " \
                                  "issues updated: #{updated_issues}"
-          Synchrony::Logger.info ""
+          Synchrony::Logger.info "---"
         end
+      end
+
+      def custom_field_synchronizable?(custom_field)
+        return false if base_custom_field?(custom_field)
+
+        cf_data = site_settings[:custom_fields_set].detect do |set|
+          custom_field.name == set[:local_custom_field]
+        end
+
+        cf_data[:sync] == "true"
+      end
+
+      def base_custom_field?(custom_field)
+        ["synchronizable", "Remote User ID"].include?(custom_field.name)
+      end
+
+      def custom_field_string_validation?(custom_field)
+        custom_field.regexp.present? ||
+          custom_field.min_length.present? ||
+          custom_field.max_length.present?
       end
 
       def update_journals(issue, remote_issue)

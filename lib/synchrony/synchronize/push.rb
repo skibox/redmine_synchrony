@@ -7,6 +7,7 @@ module Synchrony
         RemoteIssueStatus,
         RemoteIssuePriority,
         RemoteProject,
+        RemoteCustomField,
       ].freeze
 
       def initialize(issue)
@@ -22,7 +23,7 @@ module Synchrony
         return if not_synchronizable_new_record?
 
         Synchrony::Logger.info "====================================================="
-        Synchrony::Logger.info "PUSHING ATTEMPT"
+        Synchrony::Logger.info "#{issue.project.name}: #{issue.subject} PUSHING ATTEMPT"
         Synchrony::Logger.info "..."
 
         if parsed_settings.blank?
@@ -82,6 +83,11 @@ module Synchrony
           return
         end
 
+        unless check_local_resource(:custom_fields_set, :target_custom_field)
+          Synchrony::Logger.info "Please supply all target custom fields before synchronization"
+          return
+        end
+
         if project_data[:sync] != "true"
           Synchrony::Logger.info "Synchronization is disabled for Project '#{project_data[:local_project]}'"
           return
@@ -123,6 +129,9 @@ module Synchrony
         else
           push_issue
         end
+
+        Synchrony::Logger.info "#{issue.project.name}: #{issue.subject} PUSH FINISHED"
+        Synchrony::Logger.info "====================================================="
       rescue ActiveResource::TimeoutError => e
         Synchrony::Logger.info "Timeout error: #{e.message}"
       end
@@ -215,6 +224,10 @@ module Synchrony
         end
       end
 
+      def remote_custom_fields
+        @remote_custom_fields ||= RemoteCustomField.all
+      end
+
       def sanitize_input(input)
         input.mb_chars.strip
       end
@@ -287,6 +300,14 @@ module Synchrony
       end
 
       def push_issue
+        custom_fields = [
+          { id: remote_cf_for_author_id, value: target_author_id.to_i },
+          { id: remote_task_url_id, value: generate_issue_url },
+          { id: synchronizable_switch_id, value: "1" },
+        ]
+
+        custom_fields = parse_custom_fields(custom_fields)
+
         attributes = {
           subject:         issue.subject,
           description:     issue.description,
@@ -300,14 +321,10 @@ module Synchrony
           project_id:      target_project.id,
           tracker_id:      target_tracker.id,
           assigned_to_id:  target_assigned_to_id,
-          custom_fields:   [
-            { id: remote_cf_for_author_id, value: target_author_id.to_i },
-            { id: remote_task_url_id, value: generate_issue_url },
-            { id: synchronizable_switch_id, value: "1" },
-          ]
+          custom_fields:   custom_fields,
         }
 
-        Synchrony::Logger.info '====================================================='
+        Synchrony::Logger.info '---'
         Synchrony::Logger.info 'PUSHING attributes'
         Synchrony::Logger.info attributes
 
@@ -376,6 +393,126 @@ module Synchrony
         Synchrony::Logger.info e.class
         Synchrony::Logger.info e.message
         Synchrony::Logger.info "Most propably because author was not added to project members on instance B."
+      end
+
+      def parse_custom_fields(custom_fields)
+        issue.custom_field_values.each do |cfv|
+          next unless custom_field_synchronizable?(cfv.custom_field)
+
+          mapped_cf_data = parsed_settings[:custom_fields_set].detect do |set|
+            cfv.custom_field.name == set[:local_custom_field]
+          end
+
+          remote_cf = remote_custom_fields.detect do |rcf|
+            sanitize_input(rcf.name) == sanitize_input(mapped_cf_data[:target_custom_field])
+          end
+
+          if remote_cf.blank?
+            Synchrony::Logger.info "Custom field #{cfv.custom_field.name} not found on remote instance. Skipping."
+            Synchrony::Logger.info ""
+
+            next
+          end
+
+          if remote_cf.attributes["possible_values"].present?
+            possible_values = remote_cf.attributes["possible_values"].map { _1.attributes["value"] }
+
+            if remote_cf.attributes["multiple"] == "true"
+              if cfv.value.is_a?(Array)
+                common_values = possible_values & cfv.value
+
+                custom_fields << { id: remote_cf.id, value: common_values.any? ? common_values : nil }
+              else
+                Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is not an array. Skipping."
+                Synchrony::Logger.info ""
+
+                next
+              end
+            elsif possible_values.include?(cfv.value)
+              custom_fields << { id: remote_cf.id, value: cfv.value }
+            else
+              Synchrony::Logger.info "Value (#{cfv.value}) for custom field #{cfv.custom_field.name} is not in possible values. Skipping."
+              Synchrony::Logger.info ""
+
+              next
+            end
+          elsif remote_cf.attributes["field_format"] == "user" && remote_cf.attributes["multiple"] == "true"
+            if cfv.value.is_a?(Array)
+              users = User.where(id: cfv.value)
+              value = users.map { |u| fetch_remote_user_id(u) }
+
+              custom_fields << { id: remote_cf.id, value: value }
+            else
+              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is not an array. Skipping."
+              Synchrony::Logger.info ""
+
+              next
+            end
+          elsif remote_cf.attributes["field_format"] == "user"
+            if cfv.value.is_a?(Array)
+              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is an array. Skipping."
+              Synchrony::Logger.info ""
+
+              next
+            else
+              user = User.find(cfv.value)
+              value = fetch_remote_user_id(user)
+
+              custom_fields << { id: remote_cf.id, value: value }
+            end
+          elsif custom_field_string_validation?(remote_cf)
+            regexp     = remote_cf.attributes["regexp"].presence
+            min_length = remote_cf.attributes["min_length"].presence
+            max_length = remote_cf.attributes["max_length"].presence
+
+            regexp_matches     = regexp.blank? || (regexp.present? && cfv.value.match?(Regexp.new(regexp)))
+            min_length_matches = min_length.blank? || (min_length.present? && cfv.value.length >= min_length.to_i)
+            max_length_matches = max_length.blank? || (max_length.present? && cfv.value.length <= max_length.to_i)
+
+            if regexp.present? && !regexp_matches
+              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} does not match regexp. Skipping."
+              Synchrony::Logger.info ""
+            end
+
+            if min_length.present? && !min_length_matches
+              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is too short. Skipping."
+              Synchrony::Logger.info ""
+            end
+
+            if max_length.present? && !max_length_matches
+              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is too long. Skipping."
+              Synchrony::Logger.info ""
+            end
+
+            next if !regexp_matches || !min_length_matches || !max_length_matches
+
+            custom_fields << { id: remote_cf.id, value: cfv.value }
+          else
+            custom_fields << { id: remote_cf.id, value: cfv.value }
+          end
+        end
+
+        custom_fields
+      end
+
+      def custom_field_string_validation?(remote_cf)
+        remote_cf.attributes["regexp"].present? ||
+          remote_cf.attributes["min_length"].present? ||
+          remote_cf.attributes["max_length"].present?
+      end
+
+      def custom_field_synchronizable?(custom_field)
+        return false if base_custom_field?(custom_field)
+
+        cf_data = parsed_settings[:custom_fields_set].detect do |set|
+          custom_field.name == set[:local_custom_field]
+        end
+
+        cf_data[:sync] == "true"
+      end
+
+      def base_custom_field?(custom_field)
+        ["synchronizable", "Remote User ID"].include?(custom_field.name)
       end
 
       def upload_file(file)

@@ -1,10 +1,8 @@
 class RedmineSynchronyController < ApplicationController
-  def sync_issues
-    if Setting.plugin_redmine_synchrony['redmine'].present?
-      Setting.plugin_redmine_synchrony['redmine'].each do |site_settings|
-        Synchrony::Updater.new(site_settings).sync_issues
-      end
-    end
+  def pull
+    site_settings = Setting.find_by(name: "plugin_redmine_synchrony")
+    Synchrony::Synchronize::Pull.new(site_settings).call if site_settings.present?
+
     redirect_to :back
   end
 end
