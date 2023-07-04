@@ -181,7 +181,7 @@ module Synchrony
 
       def custom_field_data(custom_field)
         site_settings[:custom_fields_set].detect do |s|
-          s[:target_custom_field] == custom_field.name
+          s[:target_custom_field] == custom_field.id
         end
       end
 
@@ -294,7 +294,7 @@ module Synchrony
                        )
                        .where(
                          synchrony_id: remote_issues_ids,
-                         projects:      { name: project_data[:local_project] }
+                         projects:     { name: project_data[:local_project] }
                        )
 
           project_remote_issues.each do |remote_issue|
@@ -453,7 +453,7 @@ module Synchrony
                   next
                 else
                   principal = principal_custom_values.detect do |pcv|
-                    remote_cf.value.include?(pcv.value)
+                    remote_cf.value == pcv.value
                   end
 
                   user = User.find_by(id: principal&.customized_id)

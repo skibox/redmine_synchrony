@@ -12,11 +12,12 @@ en:
       local_default_assignee: "Local default assignee"
       local_default_issue_status: "Local default issue status"
       local_default_issue_priority: "Local default issue priority"
-      local_default_tracker: "Local default dracker"
+      local_default_tracker: "Local default tracker"
       local_tracker: "Local tracker"
       local_project: "Local project"
       local_issue_status: "Local issue status"
       local_issue_priority: "Local issue prority"
+      local_custom_field: "Local custom field"
       target_project: "Target project"
       target_tracker: "Target tracker"
       target_trackers: "Target tracker mapping"
@@ -24,7 +25,8 @@ en:
       target_issue_statuses: "Target issue status mapping"
       target_issue_priority: "Target issue priority"
       target_issue_priorities: "Target issue priority mapping"
+      target_custom_field: "Target custom field ID"
       sync: "Synchronize?"
     errors:
       messages:
-        uniqueness: "must be uniqueness"
+        uniqueness: "must be unique"

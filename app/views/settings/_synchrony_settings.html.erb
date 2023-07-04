@@ -299,10 +299,10 @@
                 id="settings_redmine_issue_statuses_set_local_issue_status_<%= issue_status_index %>"
                 name="settings[issue_statuses_set][][local_issue_status]"
                 value="<%= issue_status.name %>">
-          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= issue_status.name %></label>
+          <label style="margin-left: 0px; width: 150px; text-align: left"><%= issue_status.name %></label>
         </th>
         <th>
-          <input type="text" size="60" class='required'
+          <input type="text" size="60"
                 id="settings_redmine_issue_statuses_set_target_issue_status_<%= issue_status_index %>"
                 name="settings[issue_statuses_set][][target_issue_status]"
                 value="<%= current_target_issue_status ? current_target_issue_status["target_issue_status"] : ""%>">
@@ -350,10 +350,10 @@
                 id="settings_redmine_issue_priorities_set_local_issue_priority_<%= issue_priority_index %>"
                 name="settings[issue_priorities_set][][local_issue_priority]"
                 value="<%= issue_priority.name %>">
-          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= issue_priority.name %></label>
+          <label style="margin-left: 0px; width: 150px; text-align: left"><%= issue_priority.name %></label>
         </th>
         <th>
-          <input type="text" size="60" class='required'
+          <input type="text" size="60"
                 id="settings_redmine_issue_priorities_set_target_issue_priority_<%= issue_priority_index %>"
                 name="settings[issue_priorities_set][][target_issue_priority]"
                 value="<%= current_target_issue_priority ? current_target_issue_priority["target_issue_priority"] : ""%>">
@@ -401,10 +401,10 @@
                 id="settings_redmine_custom_fields_set_local_custom_field_<%= custom_field_index %>"
                 name="settings[custom_fields_set][][local_custom_field]"
                 value="<%= custom_field.name %>">
-          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= custom_field.name %></label>
+          <label style="margin-left: 0px; width: 150px; text-align: left"><%= custom_field.name %></label>
         </th>
         <th>
-          <input type="text" size="60" class='required'
+          <input type="text" size="60"
                 id="settings_redmine_custom_fields_set_target_custom_field_<%= custom_field_index %>"
                 name="settings[custom_fields_set][][target_custom_field]"
                 value="<%= current_target_custom_field ? current_target_custom_field["target_custom_field"] : ""%>">

@@ -7,7 +7,6 @@ module Synchrony
         RemoteIssueStatus,
         RemoteIssuePriority,
         RemoteProject,
-        RemoteCustomField,
       ].freeze
 
       def initialize(issue)
@@ -224,10 +223,6 @@ module Synchrony
         end
       end
 
-      def remote_custom_fields
-        @remote_custom_fields ||= RemoteCustomField.all
-      end
-
       def sanitize_input(input)
         input.mb_chars.strip
       end
@@ -403,102 +398,26 @@ module Synchrony
             cfv.custom_field.name == set[:local_custom_field]
           end
 
-          remote_cf = remote_custom_fields.detect do |rcf|
-            sanitize_input(rcf.name) == sanitize_input(mapped_cf_data[:target_custom_field])
-          end
+          remote_id = mapped_cf_data[:target_custom_field]
 
-          if remote_cf.blank?
-            Synchrony::Logger.info "Custom field #{cfv.custom_field.name} not found on remote instance. Skipping."
-            Synchrony::Logger.info ""
+          custom_fields << { id: remote_id, value: cfv.value }
 
-            next
-          end
+          if cfv.custom_field.field_format == "user" && cfv.custom_field.multiple
+            users = User.where(id: cfv.value)
+            value = users.map { |u| fetch_remote_user_id(u) }
 
-          if remote_cf.attributes["possible_values"].present?
-            possible_values = remote_cf.attributes["possible_values"].map { _1.attributes["value"] }
+            custom_fields << { id: remote_id, value: value }
+          elsif cfv.custom_field.field_format == "user"
+            user = User.find(cfv.value)
+            value = fetch_remote_user_id(user)
 
-            if remote_cf.attributes["multiple"] == "true"
-              if cfv.value.is_a?(Array)
-                common_values = possible_values & cfv.value
-
-                custom_fields << { id: remote_cf.id, value: common_values.any? ? common_values : nil }
-              else
-                Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is not an array. Skipping."
-                Synchrony::Logger.info ""
-
-                next
-              end
-            elsif possible_values.include?(cfv.value)
-              custom_fields << { id: remote_cf.id, value: cfv.value }
-            else
-              Synchrony::Logger.info "Value (#{cfv.value}) for custom field #{cfv.custom_field.name} is not in possible values. Skipping."
-              Synchrony::Logger.info ""
-
-              next
-            end
-          elsif remote_cf.attributes["field_format"] == "user" && remote_cf.attributes["multiple"] == "true"
-            if cfv.value.is_a?(Array)
-              users = User.where(id: cfv.value)
-              value = users.map { |u| fetch_remote_user_id(u) }
-
-              custom_fields << { id: remote_cf.id, value: value }
-            else
-              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is not an array. Skipping."
-              Synchrony::Logger.info ""
-
-              next
-            end
-          elsif remote_cf.attributes["field_format"] == "user"
-            if cfv.value.is_a?(Array)
-              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is an array. Skipping."
-              Synchrony::Logger.info ""
-
-              next
-            else
-              user = User.find(cfv.value)
-              value = fetch_remote_user_id(user)
-
-              custom_fields << { id: remote_cf.id, value: value }
-            end
-          elsif custom_field_string_validation?(remote_cf)
-            regexp     = remote_cf.attributes["regexp"].presence
-            min_length = remote_cf.attributes["min_length"].presence
-            max_length = remote_cf.attributes["max_length"].presence
-
-            regexp_matches     = regexp.blank? || (regexp.present? && cfv.value.match?(Regexp.new(regexp)))
-            min_length_matches = min_length.blank? || (min_length.present? && cfv.value.length >= min_length.to_i)
-            max_length_matches = max_length.blank? || (max_length.present? && cfv.value.length <= max_length.to_i)
-
-            if regexp.present? && !regexp_matches
-              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} does not match regexp. Skipping."
-              Synchrony::Logger.info ""
-            end
-
-            if min_length.present? && !min_length_matches
-              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is too short. Skipping."
-              Synchrony::Logger.info ""
-            end
-
-            if max_length.present? && !max_length_matches
-              Synchrony::Logger.info "Value for custom field #{cfv.custom_field.name} is too long. Skipping."
-              Synchrony::Logger.info ""
-            end
-
-            next if !regexp_matches || !min_length_matches || !max_length_matches
-
-            custom_fields << { id: remote_cf.id, value: cfv.value }
+            custom_fields << { id: remote_id, value: value }
           else
-            custom_fields << { id: remote_cf.id, value: cfv.value }
+            custom_fields << { id: remote_id, value: cfv.value }
           end
         end
 
         custom_fields
-      end
-
-      def custom_field_string_validation?(remote_cf)
-        remote_cf.attributes["regexp"].present? ||
-          remote_cf.attributes["min_length"].present? ||
-          remote_cf.attributes["max_length"].present?
       end
 
       def custom_field_synchronizable?(custom_field)
