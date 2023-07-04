@@ -294,7 +294,7 @@ module Synchrony
                        )
                        .where(
                          synchrony_id: remote_issues_ids,
-                         project:      { name: project_data[:local_project] }
+                         projects:      { name: project_data[:local_project] }
                        )
 
           project_remote_issues.each do |remote_issue|
