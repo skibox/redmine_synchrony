@@ -90,6 +90,14 @@ module Synchrony
         Synchrony::Logger.info "====================================================="
       rescue ActiveResource::TimeoutError => e
         Synchrony::Logger.info "Timeout error: #{e.message}"
+      rescue StandardError => e
+        Synchrony::Logger.info "================"
+        Synchrony::Logger.info "HTTP 500"
+        Synchrony::Logger.info "PULL ERROR"
+        Synchrony::Logger.info e.message
+        Synchrony::Logger.info "Backtrace:"
+        e.backtrace.each { |line| Synchrony::Logger.info line }
+        raise SynchronyError.new("Error during synchronization. Please check synchrony.log for details.")
       end
 
       private

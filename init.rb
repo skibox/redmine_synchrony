@@ -1,6 +1,8 @@
 require 'active_resource'
 
 if ENV["SYNC_ENABLED"] || Rails.env.production?
+  class SynchronyError < StandardError; end
+
   Issue.class_eval do
     after_save :push_changes
 

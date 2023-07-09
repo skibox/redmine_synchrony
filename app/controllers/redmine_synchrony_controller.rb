@@ -4,5 +4,8 @@ class RedmineSynchronyController < ApplicationController
     Synchrony::Synchronize::Pull.new(site_settings).call if site_settings.present?
 
     redirect_to :back
+  rescue SynchronyError => e
+    flash[:error] = e.message
+    redirect_to :back
   end
 end
