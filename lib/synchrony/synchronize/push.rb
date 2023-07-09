@@ -400,8 +400,6 @@ module Synchrony
 
           remote_id = mapped_cf_data[:target_custom_field]
 
-          custom_fields << { id: remote_id, value: cfv.value }
-
           if cfv.custom_field.field_format == "user" && cfv.custom_field.multiple
             users = User.where(id: cfv.value)
             value = users.map { |u| fetch_remote_user_id(u) }
