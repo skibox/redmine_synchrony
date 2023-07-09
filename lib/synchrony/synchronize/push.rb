@@ -464,11 +464,11 @@ module Synchrony
 
         return journal_notes.map { |jn| parse_our_note(jn) } if remote_journal_notes.empty?
 
-        journal_notes.filter_map do |journal|
+        journal_notes.map do |journal|
           next if remote_journal_notes.any? { |rjn| rjn.notes.include?(journal.notes) }
 
           parse_our_note(journal)
-        end
+        end.compact
       end
 
       def parse_our_note(journal)

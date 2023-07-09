@@ -434,7 +434,7 @@ module Synchrony
                     remote_cf.value.include?(pcv.value)
                   end
 
-                  user_ids = principals.filter_map(&:customized_id)
+                  user_ids = principals.map(&:customized_id).compact
 
                   users = User.where(id: user_ids)
 
