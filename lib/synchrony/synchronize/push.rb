@@ -432,6 +432,8 @@ module Synchrony
           custom_field.name == set[:local_custom_field]
         end
 
+        return false if cf_data.blank?
+
         cf_data[:sync] == "true"
       end
 
