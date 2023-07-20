@@ -108,13 +108,35 @@ module Synchrony
         end
 
         if target_assigned_to_id.blank?
-          Synchrony::Logger.info "User assigned to issue (#{issue.assigned_to.name}) didn't set a Remote User ID"
-          return
+          Synchrony::Logger.info "User assigned to issue (#{issue.assigned_to.name}) didn't set a Remote User ID."
+          Synchrony::Logger.info "Setting to Local default assignee Remote ID."
+          Synchrony::Logger.info ""
+
+          remote_user_id = fetch_default_remote_user_id
+
+          if remote_user_id.blank?
+            Synchrony::Logger.info "..."
+            Synchrony::Logger.info "Local default assignee also didn't set a Remote User ID... Skipping."
+            return
+          end
+
+          @target_assigned_to_id = remote_user_id
         end
 
         if target_author_id.blank?
-          Synchrony::Logger.info "Author (#{issue.author.name}) didn't set a Remote User ID"
-          return
+          Synchrony::Logger.info "Author (#{issue.author.name}) didn't set a Remote User ID."
+          Synchrony::Logger.info "Setting to Local default assignee Remote ID"
+          Synchrony::Logger.info ""
+
+          remote_author_id = fetch_default_remote_user_id
+
+          if remote_author_id.blank?
+            Synchrony::Logger.info "..."
+            Synchrony::Logger.info "Local default assignee also didn't set a Remote User ID... Skipping."
+            return
+          end
+
+          @target_author_id = remote_author_id
         end
 
         prepare_remote_resources
@@ -230,6 +252,19 @@ module Synchrony
         end
       end
 
+      def principal_custom_values
+        @principal_custom_values ||= CustomValue.where(
+          customized_type: "Principal",
+          custom_field_id: remote_user_id_cf,
+        )
+      end
+
+      def remote_user_id_cf
+        @remote_user_id_cf ||= CustomField.find_by(
+          name: "Remote User ID",
+        )
+      end
+
       def sanitize_input(input)
         input.mb_chars.strip
       end
@@ -244,6 +279,16 @@ module Synchrony
 
       def remote_cf_for_author_id
         @remote_cf_for_author_id ||= parsed_settings[:remote_cf_for_author]
+      end
+
+      def fetch_default_remote_user_id
+        principal_custom_values.detect do |pcv|
+          pcv.value == local_default_user_id
+        end&.customized_id
+      end
+
+      def local_default_user_id
+        parsed_settings[:local_default_assignee]
       end
 
       def remote_task_url_id
