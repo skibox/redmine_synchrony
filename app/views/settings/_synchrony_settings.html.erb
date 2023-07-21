@@ -177,49 +177,53 @@
       <tr>
         <p style="text-align: left; padding-left: 0px">Project mapping:</p>
       </tr>
-      <tr>
-        <th>
-          <%= t('synchrony.settings.local_project') %>
-        </th>
-        <th>
-          <%= t('synchrony.settings.target_project') %>
-        </th>
-        <th>
-          <%= t('synchrony.settings.sync') %>
-        </th>
-      </tr>
-      <% projects.each_with_index do |project, project_index|%>
-      <tr>
-        <%- current_target_project = redmine&.dig('projects_set', project_index) %>
-        <th>
-          <input type="text"
-                  class='hidden'
-                  id="settings_redmine_projects_set_local_project_<%= project_index %>"
-                  name="settings[projects_set][][local_project]"
-                  value="<%= project.name %>">
-          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= project.name %></label>
-        </th>
-        <th>
-          <input type="text" size="60" class='required'
-                id="settings_redmine_projects_set_target_project_<%= project_index %>"
-                name="settings[projects_set][][target_project]"
-                value="<%= current_target_project ? current_target_project["target_project"] : ""%>">
-        </th>
-        <th>
-          <input type="checkbox" size="60" class='required checkboxes'
-                id="settings_redmine_projects_set_sync_<%= project_index %>"
-                name="settings[projects_set][][sync]"
-                value="true"
-                <%=
-                  if current_target_project.present?
-                    current_target_project["sync"] == "true" ? "checked" : ""
-                  else
-                    "checked"
-                  end
-                %>
-          >
-        </th>
-      </tr>
+      <% if projects.any? %>
+        <tr>
+          <th>
+            <%= t('synchrony.settings.local_project') %>
+          </th>
+          <th>
+            <%= t('synchrony.settings.target_project') %>
+          </th>
+          <th>
+            <%= t('synchrony.settings.sync') %>
+          </th>
+        </tr>
+        <% projects.each_with_index do |project, project_index|%>
+        <tr>
+          <%- current_target_project = redmine&.dig('projects_set', project_index) %>
+          <th>
+            <input type="text"
+                    class='hidden'
+                    id="settings_redmine_projects_set_local_project_<%= project_index %>"
+                    name="settings[projects_set][][local_project]"
+                    value="<%= project.name %>">
+            <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= project.name %></label>
+          </th>
+          <th>
+            <input type="text" size="60" class='required'
+                  id="settings_redmine_projects_set_target_project_<%= project_index %>"
+                  name="settings[projects_set][][target_project]"
+                  value="<%= current_target_project ? current_target_project["target_project"] : ""%>">
+          </th>
+          <th>
+            <input type="checkbox" size="60" class='required checkboxes'
+                  id="settings_redmine_projects_set_sync_<%= project_index %>"
+                  name="settings[projects_set][][sync]"
+                  value="true"
+                  <%=
+                    if current_target_project.present?
+                      current_target_project["sync"] == "true" ? "checked" : ""
+                    else
+                      "checked"
+                    end
+                  %>
+            >
+          </th>
+        </tr>
+        <% end %>
+      <% else %>
+        <p style="text-align: left; padding-left: 0px; font-weight: bold"> No valid projects</p>
       <% end %>
     </table>
 
