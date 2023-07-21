@@ -381,18 +381,6 @@ module Synchrony
           if remote_issue.update_attributes(attributes)
             issue.update_columns(synchronized_at: DateTime.current)
 
-            notes = fetch_new_journal_entries(issue, remote_issue)
-
-            if notes.any?
-              notes.each do |note|
-                remote_issue.update_attributes(notes: note[:text])
-
-                r_i = RemoteIssue.find(remote_issue.id, params: { include: :journals })
-
-                Journal.find_by(id: note[:id])&.update_columns(synchrony_id: r_i.journals.last.id)
-              end
-            end
-
             attachments = issue.attachments.select { |a| a.synchrony_id.blank? }
 
             if attachments.any?
@@ -407,6 +395,7 @@ module Synchrony
                         token:        token,
                         filename:     attachment.filename,
                         content_type: attachment.content_type,
+                        description:  attachment.description,
                       }
                     ]
                   )
@@ -421,6 +410,18 @@ module Synchrony
 
                   next
                 end
+              end
+            end
+
+            notes = fetch_new_journal_entries(issue, remote_issue)
+
+            if notes.any?
+              notes.each do |note|
+                remote_issue.update_attributes(notes: note[:text])
+
+                r_i = RemoteIssue.find(remote_issue.id, params: { include: :journals })
+
+                Journal.find_by(id: note[:id])&.update_columns(synchrony_id: r_i.journals.last.id)
               end
             end
           else

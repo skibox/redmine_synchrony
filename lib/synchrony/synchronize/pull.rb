@@ -189,7 +189,13 @@ module Synchrony
 
       def custom_field_data(custom_field)
         site_settings[:custom_fields_set].detect do |s|
-          s[:target_custom_field] == custom_field.id
+          s[:target_custom_field].to_s == custom_field.id.to_s
+        end
+      end
+
+      def custom_field_data_by_id(custom_field_id)
+        site_settings[:custom_fields_set].detect do |s|
+          s[:target_custom_field] == custom_field_id
         end
       end
 
@@ -619,7 +625,7 @@ module Synchrony
             remote_journal.details.each do |detail|
               attrs = detail.attributes
 
-              next if attrs["property"] == "cf"
+              next if attrs["property"] == "attachment"
 
               options = {
                 property:  attrs["property"],
@@ -627,6 +633,51 @@ module Synchrony
                 old_value: attrs["old_value"],
                 value:     attrs["new_value"],
               }
+
+              if options[:property] == "cf"
+                our_custom_field = our_custom_fields.detect do |ocf|
+                  ocf.name == custom_field_data_by_id(options[:prop_key])&.dig(:local_custom_field)
+                end
+
+                if our_custom_field.blank?
+                  Synchrony::Logger.info "Custom field with ID #{options[:prop_key]} not found. Skipping."
+                  Synchrony::Logger.info ""
+
+                  next
+                end
+
+                options[:prop_key] = our_custom_field.id
+
+                if our_custom_field.field_format == "user"
+                  old_principal = principal_custom_values.detect do |pcv|
+                    options[:old_value] == pcv.customized_id&.to_s
+                  end
+
+                  new_principal = principal_custom_values.detect do |pcv|
+                    options[:value] == pcv.customized_id&.to_s
+                  end
+
+                  old_user = User.find_by(id: old_principal&.value)
+                  new_user = User.find_by(id: new_principal&.value)
+
+                  if old_user.blank? && options[:old_value].present?
+                    Synchrony::Logger.info "Previous user with Remote User ID #{options[:old_value]} didn't set it. Skipping."
+                    Synchrony::Logger.info ""
+
+                    next
+                  end
+
+                  if new_user.blank? && options[:value].present?
+                    Synchrony::Logger.info "New user with Remote User ID #{options[:value]} didn't set it. Skipping."
+                    Synchrony::Logger.info ""
+
+                    next
+                  end
+
+                  options[:old_value] = old_user&.id
+                  options[:value] = new_user&.id
+                end
+              end
 
               case options[:prop_key]
               when "assigned_to_id"
@@ -739,11 +790,15 @@ module Synchrony
       end
 
       def update_attachments(our_issue, remote_issue)
-        remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :attachments })
+        remote_issue = RemoteIssue.find(remote_issue.id, params: { include: [:attachments, :journals] })
 
         attachments = remote_issue.attributes["attachments"].map(&:attributes)
 
         attachments.each do |attachment|
+          a = Attachment.find_or_initialize_by(synchrony_id: attachment["id"])
+
+          next if a.persisted?
+
           content_url = attachment['content_url'].gsub(/\(|\)/) {|g| CGI.escape(g) }
           file_path = Rails.root.join("tmp/temp_files/redmine_attachment_#{attachment['id']}")
 
@@ -765,8 +820,6 @@ module Synchrony
             author_id = author&.customized_id || local_default_user_id
 
             Issue.transaction do
-              a = Attachment.find_or_initialize_by(synchrony_id: attachment["id"])
-
               a.author_id   = author_id
               a.file        = file
               a.filename    = attachment["filename"]
@@ -775,6 +828,27 @@ module Synchrony
               a.save!
 
               our_issue.attachments << a
+
+              attachment_journal = remote_issue.journals.detect do |j|
+                j.details.any? do |d|
+                  d.property == "attachment" &&
+                    d.old_value.nil? &&
+                    d.new_value == a.filename
+                end
+              end
+
+              journal = our_issue.journals.create!(
+                user_id:      author_id,
+                notes:        attachment_journal.notes,
+                synchrony_id: attachment_journal.id
+              )
+
+              journal.details.create!(
+                property:  "attachment",
+                prop_key:  a.id,
+                old_value: nil,
+                value:     a.filename,
+              )
 
               attachment_path = Rails.root.join("files/#{a.disk_directory}/#{a.disk_filename}")
 
