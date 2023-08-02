@@ -806,7 +806,10 @@ module Synchrony
 
           next if a.persisted?
 
-          content_url = attachment['content_url'].gsub(/\(|\)/) {|g| CGI.escape(g) }
+          content_url = attachment['content_url']
+          .gsub(/\(|\)/) {|g| CGI.escape(g) }
+          .gsub("http://192.168.188.58", site_settings[:target_site])
+
           file_path = Rails.root.join("tmp/temp_files/redmine_attachment_#{attachment['id']}")
 
           Synchrony::Logger.info "Downloading file #{file_path}"
