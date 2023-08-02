@@ -112,9 +112,6 @@ module Synchrony
           Synchrony::Logger.info "Setting to Local default assignee Remote ID."
           Synchrony::Logger.info ""
 
-<<<<<<< Updated upstream
-          @target_assigned_to_id = "1438"
-=======
           remote_default_user_id = fetch_default_remote_user_id
 
           if remote_default_user_id.blank?
@@ -124,7 +121,6 @@ module Synchrony
           end
 
           @target_assigned_to_id = remote_default_user_id
->>>>>>> Stashed changes
         end
 
         if target_author_id.blank?
@@ -132,9 +128,6 @@ module Synchrony
           Synchrony::Logger.info "Setting to Local default assignee Remote ID"
           Synchrony::Logger.info ""
 
-<<<<<<< Updated upstream
-          @target_author_id = "1438"
-=======
           remote_default_author_id = fetch_default_remote_user_id
 
           if remote_default_author_id.blank?
@@ -144,7 +137,6 @@ module Synchrony
           end
 
           @target_author_id = remote_default_author_id
->>>>>>> Stashed changes
         end
 
         prepare_remote_resources
