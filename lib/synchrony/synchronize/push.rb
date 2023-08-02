@@ -62,7 +62,7 @@ module Synchrony
           return
         end
 
-        if synchronizable_switch_id.blank?
+        if remote_synchronizable_switch_id.blank?
           Synchrony::Logger.info "Please supply Synchronizable Switch ID before synchronization"
           return
         end
@@ -112,7 +112,19 @@ module Synchrony
           Synchrony::Logger.info "Setting to Local default assignee Remote ID."
           Synchrony::Logger.info ""
 
+<<<<<<< Updated upstream
           @target_assigned_to_id = "1438"
+=======
+          remote_default_user_id = fetch_default_remote_user_id
+
+          if remote_default_user_id.blank?
+            Synchrony::Logger.info "..."
+            Synchrony::Logger.info "Local default assignee also didn't set a Remote User ID... Skipping."
+            return
+          end
+
+          @target_assigned_to_id = remote_default_user_id
+>>>>>>> Stashed changes
         end
 
         if target_author_id.blank?
@@ -120,7 +132,19 @@ module Synchrony
           Synchrony::Logger.info "Setting to Local default assignee Remote ID"
           Synchrony::Logger.info ""
 
+<<<<<<< Updated upstream
           @target_author_id = "1438"
+=======
+          remote_default_author_id = fetch_default_remote_user_id
+
+          if remote_default_author_id.blank?
+            Synchrony::Logger.info "..."
+            Synchrony::Logger.info "Local default assignee also didn't set a Remote User ID... Skipping."
+            return
+          end
+
+          @target_author_id = remote_default_author_id
+>>>>>>> Stashed changes
         end
 
         prepare_remote_resources
@@ -279,8 +303,8 @@ module Synchrony
         @remote_task_url_id ||= parsed_settings[:remote_task_url]
       end
 
-      def synchronizable_switch_id
-        @synchronizable_switch_id ||= parsed_settings[:synchronizable_switch]
+      def remote_synchronizable_switch_id
+        @remote_synchronizable_switch_id ||= parsed_settings[:remote_synchronizable_switch]
       end
 
       def fetch_remote_user_id(user)
@@ -319,7 +343,7 @@ module Synchrony
       def turn_off_remote_synchronization
         attributes = {
           custom_fields: [
-            { id: synchronizable_switch_id, value: "0" },
+            { id: remote_synchronizable_switch_id, value: "0" },
           ]
         }
 
@@ -334,7 +358,7 @@ module Synchrony
         custom_fields = [
           { id: remote_cf_for_author_id, value: target_author_id.to_i },
           { id: remote_task_url_id, value: generate_issue_url },
-          { id: synchronizable_switch_id, value: "1" },
+          { id: remote_synchronizable_switch_id, value: "1" },
         ]
 
         custom_fields = parse_custom_fields(custom_fields)
@@ -370,7 +394,13 @@ module Synchrony
             if attachments.any?
               attachments.each do |attachment|
                 file = File.open(attachment.diskfile)
+                Synchrony::Logger.info "Uploading file #{file.path}"
+                Synchrony::Logger.info ""
+        
                 response = upload_file(file)
+
+                Synchrony::Logger.info "-------------------------------"
+                Synchrony::Logger.info ""
 
                 if response.status == 201 && token = JSON.parse(response.body).dig("upload", "token")
                   remote_issue.update_attributes(
@@ -424,12 +454,15 @@ module Synchrony
         Synchrony::Logger.info "Issue export failed with error: "
         Synchrony::Logger.info e.class
         Synchrony::Logger.info e.message
-        Synchrony::Logger.info "Most propably because author was not added to project members on instance B."
+        Synchrony::Logger.info "Most propably because author was not added to project members on instance B, "\
+                               "or due to custom fields mismatch."
       end
 
       def parse_custom_fields(custom_fields)
         issue.custom_field_values.each do |cfv|
           next unless custom_field_synchronizable?(cfv.custom_field)
+
+          next if issue.created_on == issue.updated_on && (cfv.value.blank? || cfv.value == [""])
 
           mapped_cf_data = parsed_settings[:custom_fields_set].detect do |set|
             cfv.custom_field.name == set[:local_custom_field]
@@ -441,12 +474,14 @@ module Synchrony
             users = User.where(id: cfv.value)
             value = users.map { |u| fetch_remote_user_id(u) }
 
-            custom_fields << { id: remote_id, value: value }
-          elsif cfv.custom_field.field_format == "user"
-            user = User.find(cfv.value)
-            value = fetch_remote_user_id(user)
+            value == [] ? value = "" : value
 
             custom_fields << { id: remote_id, value: value }
+          elsif cfv.custom_field.field_format == "user"
+            user = User.find_by(id: cfv.value)
+            value = fetch_remote_user_id(user)
+
+            custom_fields << { id: remote_id, value: value || "" }
           else
             custom_fields << { id: remote_id, value: cfv.value }
           end
@@ -473,14 +508,17 @@ module Synchrony
 
       def upload_file(file)
         conn = Faraday.new(url: upload_url) do |faraday|
-          faraday.adapter :net_http
+          faraday.response :logger,
+                           Synchrony::Logger,
+                           { headers: true, bodies: true, errors: true, log_level: :debug }
         end
 
         conn.post do |req|
-          req.headers['Content-Type'] = 'application/octet-stream'
-          req.headers["Content-Length"] = file.size.to_s
+          req.options.timeout              = 5
+          req.headers['Content-Type']      = 'application/octet-stream'
           req.headers["X-Redmine-API-Key"] = parsed_settings[:api_key]
-          req.body = file
+          req.headers["Content-Length"]    = file.size.to_s
+          req.body                         = file
         end
       end
 

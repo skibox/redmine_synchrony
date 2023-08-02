@@ -53,11 +53,18 @@ module Synchrony
           terminate(error_type: "api_key")
         end
 
-        if synchronizable_switch_id.blank?
-          Synchrony::Logger.info "Please supply Synchronizable Switch ID before synchronization"
+        if local_synchronizable_switch.blank?
+          Synchrony::Logger.info "Please supply Local issue Synchronizable Switch ID before synchronization"
           Synchrony::Logger.info ""
 
-          terminate(error_type: "synchronizable_switch")
+          terminate(error_type: "local_synchronizable_switch")
+        end
+
+        if remote_synchronizable_switch_id.blank?
+          Synchrony::Logger.info "Please supply Remote Synchronizable Switch ID before synchronization"
+          Synchrony::Logger.info ""
+
+          terminate(error_type: "remote_synchronizable_switch")
         end
 
         unless check_local_resource(:trackers_set, :target_tracker)
@@ -159,8 +166,8 @@ module Synchrony
         )
       end
 
-      def synchronizable_switch_id
-        @synchronizable_switch_id ||= IssueCustomField.find_by(name: "synchronizable")&.id
+      def local_synchronizable_switch
+        @local_synchronizable_switch ||= IssueCustomField.find_by(id: site_settings[:local_synchronizable_switch])
       end
 
       def project_data(issue)
@@ -216,7 +223,7 @@ module Synchrony
       end
 
       def remote_synchronizable_switch_id
-        site_settings[:synchronizable_switch]
+        site_settings[:remote_synchronizable_switch]
       end
 
       def sanitize_input(input)
@@ -249,20 +256,20 @@ module Synchrony
       end
 
       def local_issue_synchronizable?(local_issue)
-        local_issue.custom_field_values.detect { |cf| cf.custom_field.name == "synchronizable" }&.value == "1"
+        local_issue.custom_field_values.detect { |cf| cf.custom_field == local_synchronizable_switch }&.value == "1"
       end
 
       def pull_issues
         site_settings[:projects_set].each do |project_data|
-          if project_data[:target_project].blank?
-            Synchrony::Logger.info "Synchronization settings for Project '#{issue.project.name}' are missing"
+          if project_data[:sync] != "true"
+            Synchrony::Logger.info "Synchronization is disabled for Project '#{project_data[:local_project]}'"
             Synchrony::Logger.info ""
 
             next
           end
 
-          if project_data[:sync] != "true"
-            Synchrony::Logger.info "Synchronization is disabled for Project '#{project_data[:local_project]}'"
+          if project_data[:target_project].blank?
+            Synchrony::Logger.info "Synchronization settings for Project '#{project_data[:local_project]}' are missing"
             Synchrony::Logger.info ""
 
             next
@@ -388,14 +395,14 @@ module Synchrony
             remote_updated_on = Time.zone.parse(remote_issue.updated_on)
 
             custom_fields = [
-              { id: synchronizable_switch_id, value: "1" },
+              { id: local_synchronizable_switch.id, value: "1" },
             ]
 
             # Custom fields matching
 
             excluded_remote_custom_field_ids = [
               site_settings[:remote_cf_for_author],
-              site_settings[:synchronizable_switch],
+              site_settings[:remote_synchronizable_switch],
               site_settings[:remote_task_url],
             ]
 
@@ -595,7 +602,7 @@ module Synchrony
       end
 
       def base_custom_field?(custom_field)
-        ["synchronizable", "Remote User ID"].include?(custom_field.name)
+        [local_synchronizable_switch.name, "Remote User ID"].include?(custom_field.name)
       end
 
       def custom_field_string_validation?(custom_field)
@@ -802,13 +809,22 @@ module Synchrony
           content_url = attachment['content_url'].gsub(/\(|\)/) {|g| CGI.escape(g) }
           file_path = Rails.root.join("tmp/temp_files/redmine_attachment_#{attachment['id']}")
 
+          Synchrony::Logger.info "Downloading file #{file_path}"
+          Synchrony::Logger.info ""
+
           conn = Faraday.new(url: content_url) do |faraday|
-            faraday.adapter :net_http
+            faraday.response :logger,
+                             Synchrony::Logger,
+                             { headers: true, bodies: true, errors: true, log_level: :debug }
           end
 
           response = conn.get do |req|
             req.headers["X-Redmine-API-Key"] = site_settings[:api_key]
+            req.options.timeout              = 5
           end
+
+          Synchrony::Logger.info "-------------------------------"
+          Synchrony::Logger.info ""
 
           if response.status == 200
             file = File.open(file_path, "w+b")

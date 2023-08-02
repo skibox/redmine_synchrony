@@ -26,11 +26,9 @@
    projects = Project
                 .joins(
                   <<-SQL.squish
-                    JOIN issues
-                      ON issues.project_id = projects.id
                     JOIN custom_values cv
-                      ON cv.customized_type = 'Issue'
-                      AND cv.customized_id = issues.id
+                      ON cv.customized_type = 'Project'
+                      AND cv.customized_id = projects.id
                       AND cv.value = '1'
                     JOIN custom_fields cf
                       ON cf.id = cv.custom_field_id
@@ -64,7 +62,7 @@
               SQL
             )
             .where.not(type: "AnonymousUser")
-            .order("users.lastname ASC, users.firstname ASC")
+            .order("users.firstname ASC")
    users_data = {}.tap { |p| users.each { |user| p[user.id] = user.name } }.to_json  
 
    issue_statuses = IssueStatus.all
@@ -79,9 +77,13 @@
    all_custom_fields = CustomField.all
 
    custom_fields = all_custom_fields.select do |cf|
-      %w[bool int link list string text user].include?(cf.field_format) &&
+      %w[bool int float link list string text user].include?(cf.field_format) &&
       ["synchronizable", "Remote User ID"].exclude?(cf.name)
     end
+
+   issue_custom_fields = all_custom_fields.select do |cf|
+     cf.type == "IssueCustomField"
+   end
 %>
 
 <div>
@@ -103,7 +105,7 @@
           api_key
           remote_cf_for_author
           remote_task_url
-          synchronizable_switch
+          remote_synchronizable_switch
         ).each do |prop| %>
       <p style="padding-left: 0px">
         <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_<%= prop %>">
@@ -119,7 +121,17 @@
     <br>
 
     <p style="padding-left: 0px">
-      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_assignee">
+      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_synchronizable_switch">
+        <%= t('synchrony.settings.local_synchronizable_switch') %>
+      </label>
+      <%= select_tag 'settings[local_synchronizable_switch]',
+                      options_from_collection_for_select(issue_custom_fields, 'id', 'name', redmine ? redmine['local_synchronizable_switch'] : nil),
+                      style: "width: 300px;",
+                      include_blank: true, id: "settings_redmine_local_synchronizable_switch", class: 'required' %>
+    </p>
+
+    <p style="padding-left: 0px">
+      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_default_assignee">
         <%= t('synchrony.settings.local_default_assignee') %>
       </label>
       <%= select_tag 'settings[local_default_assignee]',
@@ -129,7 +141,7 @@
     </p>
 
     <p style="padding-left: 0px">
-      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_issue_status">
+      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_default_issue_status">
         <%= t('synchrony.settings.local_default_issue_status') %>
       </label>
       <%= select_tag 'settings[local_default_issue_status]',
@@ -139,7 +151,7 @@
     </p>
 
     <p style="padding-left: 0px">
-      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_issue_priority">
+      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_default_issue_priority">
         <%= t('synchrony.settings.local_default_issue_priority') %>
       </label>
       <%= select_tag 'settings[local_default_issue_priority]',
@@ -149,7 +161,7 @@
     </p>
 
     <p style="padding-left: 0px">
-      <label style="margin-left: 0px; width: 200px; text-align: left" for="settings_redmine_local_default_tracker">
+      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_default_tracker">
         <%= t('synchrony.settings.local_default_tracker') %>
       </label>
       <%= select_tag 'settings[local_default_tracker]',
@@ -191,7 +203,7 @@
         </tr>
         <% projects.each_with_index do |project, project_index|%>
         <tr>
-          <%- current_target_project = redmine&.dig('projects_set', project_index) %>
+          <%- current_target_project = redmine&.dig('projects_set').detect { |ts| ts["local_project"] == project.name } %>
           <th>
             <input type="text"
                     class='hidden'
@@ -201,7 +213,7 @@
             <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= project.name %></label>
           </th>
           <th>
-            <input type="text" size="60" class='required'
+            <input type="text" size="60"
                   id="settings_redmine_projects_set_target_project_<%= project_index %>"
                   name="settings[projects_set][][target_project]"
                   value="<%= current_target_project ? current_target_project["target_project"] : ""%>">
@@ -246,7 +258,7 @@
       </tr>
       <% trackers.each_with_index do |tracker, tracker_index|%>
       <tr>
-        <%- current_target_tracker = redmine&.dig('trackers_set', tracker_index) %>
+        <%- current_target_tracker = redmine&.dig('trackers_set').detect { |ts| ts["local_tracker"] == tracker.name } %>
         <th>
           <input class='hidden'
                 id="settings_redmine_trackers_set_local_tracker_<%= tracker_index %>"
@@ -255,7 +267,7 @@
           <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= tracker.name %></label>
         </th>
         <th>
-          <input type="text" size="60" class='required'
+          <input type="text" size="60"
                 id="settings_redmine_trackers_set_target_tracker_<%= tracker_index %>"
                 name="settings[trackers_set][][target_tracker]"
                 value="<%= current_target_tracker ? current_target_tracker["target_tracker"] : ""%>">
@@ -297,7 +309,7 @@
       </tr>
       <% issue_statuses.each_with_index do |issue_status, issue_status_index|%>
       <tr>
-        <%- current_target_issue_status = redmine&.dig('issue_statuses_set', issue_status_index) %>
+        <%- current_target_issue_status = redmine&.dig('issue_statuses_set').detect { |ts| ts["local_issue_status"] == issue_status.name } %>
         <th>
           <input class='hidden'
                 id="settings_redmine_issue_statuses_set_local_issue_status_<%= issue_status_index %>"
@@ -348,7 +360,7 @@
       </tr>
       <% issue_priorities.each_with_index do |issue_priority, issue_priority_index|%>
       <tr>
-        <%- current_target_issue_priority = redmine&.dig('issue_priorities_set', issue_priority_index) %>
+        <%- current_target_issue_priority = redmine&.dig('issue_priorities_set').detect { |ts| ts["local_issue_priority"] == issue_priority.name } %>
         <th>
           <input class='hidden'
                 id="settings_redmine_issue_priorities_set_local_issue_priority_<%= issue_priority_index %>"
@@ -399,7 +411,7 @@
       </tr>
       <% custom_fields.each_with_index do |custom_field, custom_field_index|%>
       <tr>
-        <%- current_target_custom_field = redmine&.dig('custom_fields_set', custom_field_index) %>
+        <%- current_target_custom_field = redmine&.dig('custom_fields_set').detect { |ts| ts["local_custom_field"] == custom_field.name } %>
         <th>
           <input class='hidden'
                 id="settings_redmine_custom_fields_set_local_custom_field_<%= custom_field_index %>"

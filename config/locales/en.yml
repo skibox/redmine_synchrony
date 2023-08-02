@@ -9,6 +9,7 @@ en:
       remote_cf_for_author: "Remote CF for Author ID"
       remote_task_url: "Remote task URL ID"
       synchronizable_switch: "Remote synchronizable switch ID"
+      local_synchronizable_switch: "Local issue synchronizable switch"
       local_default_assignee: "Local default assignee"
       local_default_issue_status: "Local default issue status"
       local_default_issue_priority: "Local default issue priority"
