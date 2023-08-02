@@ -62,8 +62,15 @@ module Synchrony
           return
         end
 
+        if local_synchronizable_switch.blank?
+          Synchrony::Logger.info "Please supply Local issue Synchronizable Switch ID before synchronization"
+          Synchrony::Logger.info ""
+
+          return
+        end
+
         if remote_synchronizable_switch_id.blank?
-          Synchrony::Logger.info "Please supply Synchronizable Switch ID before synchronization"
+          Synchrony::Logger.info "Please supply Remote Synchronizable Switch ID before synchronization"
           return
         end
 
@@ -184,8 +191,12 @@ module Synchrony
         issue.created_on == issue.updated_on
       end
 
+      def local_synchronizable_switch
+        @local_synchronizable_switch ||= IssueCustomField.find_by(id: parsed_settings[:local_synchronizable_switch])
+      end
+
       def synchronizable?
-        issue.custom_field_values.detect { |cf| cf.custom_field.name == "synchronizable" }&.value == "1"
+        issue.custom_field_values.detect { |cf| cf.custom_field == local_synchronizable_switch }&.value == "1"
       end
 
       def project_data
@@ -283,8 +294,8 @@ module Synchrony
 
       def fetch_default_remote_user_id
         principal_custom_values.detect do |pcv|
-          pcv.customized_id.to_s == local_default_user_id
-        end&.value
+          pcv.value == local_default_user_id
+        end&.customized_id
       end
 
       def local_default_user_id
@@ -495,7 +506,7 @@ module Synchrony
       end
 
       def base_custom_field?(custom_field)
-        ["synchronizable", "Remote User ID"].include?(custom_field.name)
+        [local_synchronizable_switch.name, "Remote User ID"].include?(custom_field.name)
       end
 
       def upload_file(file)
