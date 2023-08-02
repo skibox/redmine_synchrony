@@ -283,7 +283,7 @@ module Synchrony
 
       def fetch_default_remote_user_id
         principal_custom_values.detect do |pcv|
-          pcv.customized_id == local_default_user_id
+          pcv.customized_id.to_s == local_default_user_id
         end&.value
       end
 
