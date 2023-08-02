@@ -122,9 +122,12 @@ module Synchrony
           remote_default_user_id = fetch_default_remote_user_id
 
           if remote_default_user_id.blank?
-            @target_assigned_to_id = "1438"
+            Synchrony::Logger.info "..."
+            Synchrony::Logger.info "Local default assignee also didn't set a Remote User ID... Skipping."
+            return
           end
 
+          @target_assigned_to_id = remote_default_user_id
         end
 
         if target_author_id.blank?
@@ -135,9 +138,12 @@ module Synchrony
           remote_default_author_id = fetch_default_remote_user_id
 
           if remote_default_author_id.blank?
-            @target_author_id = "1438"
+            Synchrony::Logger.info "..."
+            Synchrony::Logger.info "Local default assignee also didn't set a Remote User ID... Skipping."
+            return
           end
-          
+
+          @target_author_id = remote_default_author_id
         end
 
         prepare_remote_resources
@@ -288,8 +294,8 @@ module Synchrony
 
       def fetch_default_remote_user_id
         principal_custom_values.detect do |pcv|
-          pcv.value == local_default_user_id
-        end&.customized_id
+          pcv.customized_id == local_default_user_id
+        end&.value
       end
 
       def local_default_user_id
