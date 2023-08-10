@@ -60,6 +60,20 @@ module Synchrony
           terminate(error_type: "local_synchronizable_switch")
         end
 
+        if local_last_sync_successful.blank?
+          Synchrony::Logger.info "Please supply Local last sync successful before synchronization"
+          Synchrony::Logger.info ""
+
+          terminate(error_type: "local_last_sync_successful")
+        end
+
+        if local_remote_url.blank?
+          Synchrony::Logger.info "Please supply Local remote URL before synchronization"
+          Synchrony::Logger.info ""
+
+          terminate(error_type: "local_remote_url")
+        end
+
         if remote_synchronizable_switch_id.blank?
           Synchrony::Logger.info "Please supply Remote Synchronizable Switch ID before synchronization"
           Synchrony::Logger.info ""
@@ -170,6 +184,14 @@ module Synchrony
         @local_synchronizable_switch ||= IssueCustomField.find_by(id: site_settings[:local_synchronizable_switch])
       end
 
+      def local_remote_url
+        @local_remote_url ||= IssueCustomField.find_by(id: site_settings[:local_remote_url])
+      end
+
+      def local_last_sync_successful
+        @local_last_sync_successful ||= IssueCustomField.find_by(id: site_settings[:local_last_sync_successful])
+      end
+
       def project_data(issue)
         site_settings[:projects_set].detect do |s|
           s[:target_project] == issue.project.name
@@ -195,13 +217,13 @@ module Synchrony
       end
 
       def custom_field_data(custom_field)
-        site_settings[:custom_fields_set].detect do |s|
+        site_settings[:custom_fields_set]&.detect do |s|
           s[:target_custom_field].to_s == custom_field.id.to_s
         end
       end
 
       def custom_field_data_by_id(custom_field_id)
-        site_settings[:custom_fields_set].detect do |s|
+        site_settings[:custom_fields_set]&.detect do |s|
           s[:target_custom_field] == custom_field_id
         end
       end
@@ -382,7 +404,7 @@ module Synchrony
 
             # Assignee matching
             assigned_to = principal_custom_values.detect do |pcv|
-              pcv.value == remote_issue.assigned_to&.id.to_s
+              pcv.value == remote_issue.try(:assigned_to)&.id.to_s
             end
             assigned_to_id = assigned_to&.customized_id || local_default_user_id
 
@@ -396,6 +418,7 @@ module Synchrony
 
             custom_fields = [
               { id: local_synchronizable_switch.id, value: "1" },
+              { id: local_remote_url.id, value: "#{site_settings[:target_site]}/issues/#{remote_issue.id}" },
             ]
 
             # Custom fields matching
@@ -602,7 +625,12 @@ module Synchrony
       end
 
       def base_custom_field?(custom_field)
-        [local_synchronizable_switch.name, "Remote User ID"].include?(custom_field.name)
+        [
+          local_synchronizable_switch.name,
+          local_remote_url.name,
+          remote_user_id_cf.name,
+          local_last_sync_successful.name,
+        ].include?(custom_field.name)
       end
 
       def custom_field_string_validation?(custom_field)
@@ -807,8 +835,8 @@ module Synchrony
           next if a.persisted?
 
           content_url = attachment['content_url']
-          .gsub(/\(|\)/) {|g| CGI.escape(g) }
-          .gsub("http://192.168.188.58", site_settings[:target_site])
+                          .gsub(/\(|\)/) {|g| CGI.escape(g) }
+                          .gsub("http://192.168.188.58", site_settings[:target_site])
 
           file_path = Rails.root.join("tmp/temp_files/redmine_attachment_#{attachment['id']}")
 

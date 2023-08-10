@@ -10,6 +10,7 @@ en:
       remote_task_url: "Remote task URL ID"
       synchronizable_switch: "Remote synchronizable switch ID"
       local_synchronizable_switch: "Local issue synchronizable switch"
+      local_remote_url: "Local issue remote URL"
       local_default_assignee: "Local default assignee"
       local_default_issue_status: "Local default issue status"
       local_default_issue_priority: "Local default issue priority"

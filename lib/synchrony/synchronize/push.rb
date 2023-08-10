@@ -69,6 +69,20 @@ module Synchrony
           return
         end
 
+        if local_remote_url.blank?
+          Synchrony::Logger.info "Please supply Local remote URL before synchronization"
+          Synchrony::Logger.info ""
+
+          return
+        end
+
+        if local_last_sync_successful.blank?
+          Synchrony::Logger.info "Please supply Local last sync successful before synchronization"
+          Synchrony::Logger.info ""
+
+          return
+        end
+
         if remote_synchronizable_switch_id.blank?
           Synchrony::Logger.info "Please supply Remote Synchronizable Switch ID before synchronization"
           return
@@ -155,7 +169,7 @@ module Synchrony
           Synchrony::Logger.info "Issue #{issue.subject} marked as non-synchronizable. Turning it off on remote."
           turn_off_remote_synchronization
         else
-          push_issue
+          ActiveRecord::Base.transaction { push_issue }
         end
 
         Synchrony::Logger.info "#{issue.project.name}: #{issue.subject} PUSH FINISHED"
@@ -193,6 +207,14 @@ module Synchrony
 
       def local_synchronizable_switch
         @local_synchronizable_switch ||= IssueCustomField.find_by(id: parsed_settings[:local_synchronizable_switch])
+      end
+
+      def local_remote_url
+        @local_remote_url ||= IssueCustomField.find_by(id: parsed_settings[:local_remote_url])
+      end
+
+      def local_last_sync_successful
+        @local_last_sync_successful ||= IssueCustomField.find_by(id: parsed_settings[:local_last_sync_successful])
       end
 
       def synchronizable?
@@ -315,7 +337,11 @@ module Synchrony
       end
 
       def check_local_resource(set, target_field)
-        parsed_settings[set]
+        target_set = parsed_settings[set]
+
+        return true unless target_set
+
+        target_set
           .select { |ps| ps[:sync] == "true" }
           .all? { |ps| ps[target_field].present? }
       end
@@ -343,6 +369,10 @@ module Synchrony
         "#{parsed_settings[:local_site]}/issues/#{issue.id}"
       end
 
+      def generate_remote_issue_url(remote_issue)
+        "#{parsed_settings[:target_site]}/issues/#{remote_issue.id}"
+      end
+
       def turn_off_remote_synchronization
         attributes = {
           custom_fields: [
@@ -358,6 +388,8 @@ module Synchrony
       end
 
       def push_issue
+        issue.skip_synchronization = true
+
         custom_fields = [
           { id: remote_cf_for_author_id, value: target_author_id.to_i },
           { id: remote_task_url_id, value: generate_issue_url },
@@ -392,6 +424,12 @@ module Synchrony
           if remote_issue.update_attributes(attributes)
             issue.update_columns(synchronized_at: DateTime.current)
 
+            issue.update(
+              custom_fields: [
+                { id: local_remote_url.id, value: generate_remote_issue_url(remote_issue) },
+              ]
+            )
+
             attachments = issue.attachments.select { |a| a.synchrony_id.blank? }
 
             if attachments.any?
@@ -399,7 +437,7 @@ module Synchrony
                 file = File.open(attachment.diskfile)
                 Synchrony::Logger.info "Uploading file #{file.path}"
                 Synchrony::Logger.info ""
-        
+
                 response = upload_file(file)
 
                 Synchrony::Logger.info "-------------------------------"
@@ -421,6 +459,12 @@ module Synchrony
 
                   Attachment.find_by(id: attachment.id)&.update_columns(synchrony_id: r_i.attachments.last.id)
                 else
+                  issue.update(
+                    custom_fields: [
+                      { id: local_last_sync_successful.id, value: "0" }
+                    ]
+                  )
+
                   Synchrony::Logger.info "Attachment #{attachment.id} could not be synced:"
                   Synchrony::Logger.info "Status: #{response.status}"
                   Synchrony::Logger.info "Body: #{response.body}"
@@ -442,17 +486,39 @@ module Synchrony
               end
             end
           else
-            Synchrony::Logger.info "Issue #{issue.id} could not be synced: #{remote_issue.errors.full_messages}"
+            issue.update(
+              custom_fields: [
+                { id: local_last_sync_successful.id, value: "0" }
+              ]
+            )
+
+            Synchrony::Logger.info "Issue #{issue.id} could not be synced: #{remote_issue.errors}"
+            return
           end
         rescue ActiveResource::ResourceNotFound
           new_remote_issue = RemoteIssue.new(attributes)
 
           if new_remote_issue.save!
             issue.update_columns(synchrony_id: new_remote_issue.id, synchronized_at: DateTime.current)
+
+            issue.update(
+              custom_fields: [
+                { id: local_remote_url.id, value: generate_remote_issue_url(new_remote_issue) },
+              ]
+            )
           else
-            Synchrony::Logger.info "Issue #{issue.id} could not be synced: #{new_remote_issue.errors.full_messages}"
+            issue.update(
+              custom_fields: [
+                { id: local_last_sync_successful.id, value: "0" }
+              ]
+            )
+
+            Synchrony::Logger.info "Issue #{issue.id} could not be synced: #{new_remote_issue.errors}"
+            return
           end
         end
+
+        issue.update(custom_fields: [{ id: local_last_sync_successful.id, value: "1" }])
       rescue ActiveResource::ResourceInvalid => e
         Synchrony::Logger.info "Issue export failed with error: "
         Synchrony::Logger.info e.class
@@ -506,7 +572,12 @@ module Synchrony
       end
 
       def base_custom_field?(custom_field)
-        [local_synchronizable_switch.name, "Remote User ID"].include?(custom_field.name)
+        [
+          local_synchronizable_switch.name,
+          local_remote_url.name,
+          remote_user_id_cf.name,
+          local_last_sync_successful.name,
+        ].include?(custom_field.name)
       end
 
       def upload_file(file)
