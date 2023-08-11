@@ -578,6 +578,11 @@ module Synchrony
                 attributes[:author_id] = local_default_user_id
                 attributes[:assigned_to_id] = local_default_user_id
                 our_issue.update!(**attributes)
+              rescue ActiveRecord::StaleObjectError
+                Synchrony::Logger.info "Issue was updated by another user. Skipping."
+                Synchrony::Logger.info ""
+
+                next
               end
               updated_issues += 1
             else
@@ -596,6 +601,11 @@ module Synchrony
                 new_issue.author_id = local_default_user_id
                 new_issue.assigned_to_id = local_default_user_id
                 new_issue.save!
+              rescue ActiveRecord::StaleObjectError
+                Synchrony::Logger.info "Issue was updated by another user. Skipping."
+                Synchrony::Logger.info ""
+
+                next
               end
 
               update_journals(new_issue, remote_issue)
