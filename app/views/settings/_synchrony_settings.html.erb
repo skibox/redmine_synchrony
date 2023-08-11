@@ -79,11 +79,12 @@
    local_synchronizable_switch_id = redmine&.dig('local_synchronizable_switch')
    local_remote_url_id = redmine&.dig('local_remote_url')
    local_last_sync_successful_id = redmine&.dig('local_last_sync_successful')
+   local_initial_project_id = redmine&.dig('local_initial_project')
 
    custom_fields = all_custom_fields.select do |cf|
       %w[bool int float link list string text user].include?(cf.field_format) &&
       ["Remote User ID"].exclude?(cf.name) &&
-      [local_synchronizable_switch_id, local_remote_url_id, local_last_sync_successful_id].exclude?(cf.id.to_s)
+      [local_synchronizable_switch_id, local_remote_url_id, local_last_sync_successful_id, local_initial_project_id].exclude?(cf.id.to_s)
     end
 
    issue_custom_fields = all_custom_fields.select do |cf|
@@ -153,6 +154,16 @@
                       options_from_collection_for_select(issue_custom_fields, 'id', 'name', redmine ? redmine['local_last_sync_successful'] : nil),
                       style: "width: 300px;",
                       include_blank: true, id: "settings_redmine_local_last_sync_successful", class: 'required' %>
+    </p>
+
+    <p style="padding-left: 0px">
+      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_initial_project">
+        <%= t('synchrony.settings.local_initial_project') %>
+      </label>
+      <%= select_tag 'settings[local_initial_project]',
+                      options_from_collection_for_select(issue_custom_fields, 'id', 'name', redmine ? redmine['local_initial_project'] : nil),
+                      style: "width: 300px;",
+                      include_blank: true, id: "settings_redmine_local_initial_project", class: 'required' %>
     </p>
 
     <br>
@@ -263,6 +274,42 @@
         <% end %>
       <% else %>
         <p style="text-align: left; padding-left: 0px; font-weight: bold"> No valid projects</p>
+      <% end %>
+    </table>
+
+    <br>
+
+    <table>
+      <tr>
+        <p style="text-align: left; padding-left: 0px">Tracker-Project mapping:</p>
+      </tr>
+      <tr>
+        <th>
+          <%= t('synchrony.settings.target_tracker') %>
+        </th>
+        <th>
+          <%= t('synchrony.settings.local_project') %>
+        </th>
+      </tr>
+      <% target_trackers = redmine&.dig('trackers_set')&.pluck("target_tracker") %>
+
+      <% target_trackers.each_with_index do |target_tracker, target_tracker_index|%>
+      <tr>
+        <%- current_target_tracker = redmine&.dig('tracker-projects_set')&.detect { |ts| ts["target_tracker"] == target_tracker} %>
+        <th>
+          <input class='hidden'
+                id="settings_redmine_tracker-projects_set_target_tracker_<%= target_tracker_index %>"
+                name="settings[tracker-projects_set][][target_tracker]"
+                value="<%= target_tracker %>">
+          <label class="required" style="margin-left: 0px; width: 150px; text-align: left"><%= target_tracker %></label>
+        </th>
+        <th>
+          <%= select_tag 'settings[tracker-projects_set][][local_project]',
+                  options_from_collection_for_select(projects, 'id', 'name', current_target_tracker ? current_target_tracker["local_project"] : nil),
+                  style: "width: 500px;",
+                  include_blank: true, id: "settings_redmine_tracker-projects_set_local_project_#{target_tracker_index}" %>
+        </th>
+      </tr>
       <% end %>
     </table>
 

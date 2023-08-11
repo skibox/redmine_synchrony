@@ -74,6 +74,13 @@ module Synchrony
           terminate(error_type: "local_remote_url")
         end
 
+        if local_initial_project.blank?
+          Synchrony::Logger.info "Please supply Local initial project before synchronization"
+          Synchrony::Logger.info ""
+
+          terminate(error_type: "local_initial_project")
+        end
+
         if remote_synchronizable_switch_id.blank?
           Synchrony::Logger.info "Please supply Remote Synchronizable Switch ID before synchronization"
           Synchrony::Logger.info ""
@@ -192,6 +199,10 @@ module Synchrony
         @local_last_sync_successful ||= IssueCustomField.find_by(id: site_settings[:local_last_sync_successful])
       end
 
+      def local_initial_project
+        @local_initial_project ||= IssueCustomField.find_by(id: site_settings[:local_initial_project])
+      end
+
       def project_data(issue)
         site_settings[:projects_set].detect do |s|
           s[:target_project] == issue.project.name
@@ -282,31 +293,26 @@ module Synchrony
       end
 
       def pull_issues
-        site_settings[:projects_set].each do |project_data|
-          if project_data[:sync] != "true"
-            Synchrony::Logger.info "Synchronization is disabled for Project '#{project_data[:local_project]}'"
+        target_projects_data = site_settings[:projects_set].select { |ps| ps[:sync] == "true" }.pluck(:target_project).uniq
+
+        target_projects_data.each do |target_project|
+          if target_project.blank?
+            Synchrony::Logger.info "Synchronization settings for Project '#{target_project}' are missing"
             Synchrony::Logger.info ""
 
             next
           end
 
-          if project_data[:target_project].blank?
-            Synchrony::Logger.info "Synchronization settings for Project '#{project_data[:local_project]}' are missing"
-            Synchrony::Logger.info ""
-
-            next
-          end
-
-          Synchrony::Logger.info "Pulling issues from project '#{project_data[:target_project]}'"
+          Synchrony::Logger.info "Pulling issues from project '#{target_project}'"
           Synchrony::Logger.info ""
 
           created_issues = 0
           updated_issues = 0
 
-          target_project_id = remote_projects.detect { |rp| rp.name == project_data[:target_project] }&.id
+          target_project_id = remote_projects.detect { |rp| rp.name == target_project }&.id
 
           if target_project_id.blank?
-            Synchrony::Logger.info "Project #{project_data[:target_project]} not found on #{site_settings[:target_site]}"
+            Synchrony::Logger.info "Project #{target_project} not found on #{site_settings[:target_site]}"
             Synchrony::Logger.info ""
             next
           end
@@ -315,6 +321,7 @@ module Synchrony
             params: {
               project_id: target_project_id,
               f:          [""],
+              sort:       "updated_on:desc"
             }
           )
 
@@ -323,7 +330,7 @@ module Synchrony
           end
 
           if project_remote_issues.blank?
-            Synchrony::Logger.info "Project '#{project_data[:target_project]}' has no synchronizable issues"
+            Synchrony::Logger.info "Project '#{target_project}' has no synchronizable issues"
             Synchrony::Logger.info "---"
 
             next
@@ -337,7 +344,6 @@ module Synchrony
                        )
                        .where(
                          synchrony_id: remote_issues_ids,
-                         projects:     { name: project_data[:local_project] }
                        )
 
           project_remote_issues.each do |remote_issue|
@@ -381,9 +387,6 @@ module Synchrony
               next
             end
 
-            project    = our_projects.detect { |op| op.name == project_data[:local_project] }
-            project_id = project.id
-
             # Priority matching
             issue_priority = our_issue_priorities.detect do |oip|
               oip.name == issue_priority_data&.dig(:local_issue_priority)
@@ -412,13 +415,28 @@ module Synchrony
             author = principal_custom_values.detect do |pcv|
               pcv.value == remote_issue.author.id.to_s
             end
+
             author_id = author&.customized_id || local_default_user_id
+
+            # Project matching
+            project_id = if our_issue.present?
+                           target_id = our_issue.custom_field_values.detect { |cf| cf.custom_field == local_initial_project }&.value
+
+                           target_id.presence || our_issue.project_id
+                         else
+                           project_by_tracker = site_settings[:"tracker-projects_set"].detect do |tps|
+                             tps[:target_tracker] == tracker_data[:target_tracker]
+                           end
+
+                           project_by_tracker[:local_project]
+                         end
 
             remote_updated_on = Time.zone.parse(remote_issue.updated_on)
 
             custom_fields = [
               { id: local_synchronizable_switch.id, value: "1" },
               { id: local_remote_url.id, value: "#{site_settings[:target_site]}/issues/#{remote_issue.id}" },
+              { id: local_initial_project.id, value: project_id }
             ]
 
             # Custom fields matching
@@ -569,6 +587,7 @@ module Synchrony
                 update_attachments(our_issue, remote_issue)
 
                 our_issue.update!(**attributes)
+                our_issue.update_columns(project_id: attributes[:project_id])
               rescue ActiveRecord::RecordInvalid
                 Synchrony::Logger.info "Issue author and assignee replaced with default user."
                 Synchrony::Logger.info "Please add user #{our_issue.author.name} and #{our_issue.assigned_to.name} " \
@@ -618,7 +637,7 @@ module Synchrony
             Synchrony::Logger.info ""
           end
 
-          Synchrony::Logger.info "Project '#{project_data[:local_project]}' issues created: #{created_issues}, " \
+          Synchrony::Logger.info "Project '#{target_project}' issues created: #{created_issues}, " \
                                  "issues updated: #{updated_issues}"
           Synchrony::Logger.info "---"
         end
@@ -640,6 +659,7 @@ module Synchrony
           local_remote_url.name,
           remote_user_id_cf.name,
           local_last_sync_successful.name,
+          local_initial_project.name,
         ].include?(custom_field.name)
       end
 
