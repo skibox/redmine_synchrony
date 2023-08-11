@@ -291,7 +291,7 @@
           <%= t('synchrony.settings.local_project') %>
         </th>
       </tr>
-      <% target_trackers = redmine&.dig('trackers_set')&.pluck("target_tracker") %>
+      <% target_trackers = redmine&.dig('trackers_set')&.select { |ts| ts["sync"] == "true"}&.pluck("target_tracker") %>
 
       <% target_trackers.each_with_index do |target_tracker, target_tracker_index|%>
       <tr>
