@@ -883,18 +883,20 @@ module Synchrony
                 end
               end
 
-              journal = our_issue.journals.create!(
-                user_id:      author_id,
-                notes:        attachment_journal.notes,
-                synchrony_id: attachment_journal.id
-              )
+              if attachment_journal
+                journal = our_issue.journals.create!(
+                  user_id:      author_id,
+                  notes:        attachment_journal.notes,
+                  synchrony_id: attachment_journal.id
+                )
 
-              journal.details.create!(
-                property:  "attachment",
-                prop_key:  a.id,
-                old_value: nil,
-                value:     a.filename,
-              )
+                journal.details.create!(
+                  property:  "attachment",
+                  prop_key:  a.id,
+                  old_value: nil,
+                  value:     a.filename,
+                )
+              end
 
               attachment_path = Rails.root.join("files/#{a.disk_directory}/#{a.disk_filename}")
 
