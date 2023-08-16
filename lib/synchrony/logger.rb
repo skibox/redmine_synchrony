@@ -12,7 +12,9 @@ module Synchrony
       proc do |severity, time, _progname, msg|
         formatted_severity = sprintf("%-5s", severity.to_s)
         formatted_time = time.strftime("%Y-%m-%d %H:%M:%S")
-        "[#{formatted_severity} #{formatted_time} #{$$}] #{msg.to_s.strip}\n"
+		msg = msg.to_s.strip
+		msg = msg.to_s.unpack("C*").pack("U*").strip if !msg.valid_encoding?
+        "[#{formatted_severity} #{formatted_time} #{$$}] #{msg}\n"
       end
     end
 
