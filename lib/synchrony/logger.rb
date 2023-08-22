@@ -8,13 +8,15 @@ module Synchrony
       self
     end
 
+    def clean_message(msg)
+      msg.to_s.strip.encode('UTF-8', invalid: :replace, undef: :replace, replace: '')
+    end						  
+
     def formatter
       proc do |severity, time, _progname, msg|
         formatted_severity = sprintf("%-5s", severity.to_s)
-        formatted_time = time.strftime("%Y-%m-%d %H:%M:%S")
-		msg = msg.to_s.strip
-		msg = msg.to_s.unpack("C*").pack("U*").strip if !msg.valid_encoding?
-        "[#{formatted_severity} #{formatted_time} #{$$}] #{msg}\n"
+        formatted_time = time.strftime("%Y-%m-%d %H:%M:%S") 
+        "[#{formatted_severity} #{formatted_time} #{$$}] #{clean_message(msg)}\n"   
       end
     end
 
