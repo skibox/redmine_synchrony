@@ -9,7 +9,7 @@ module Synchrony
     end
 
     def clean_message(msg)
-      msg.to_s.strip.encode('UTF-8', invalid: :replace, undef: :replace, replace: '')
+      msg.to_s.encode('UTF-8', invalid: :replace, undef: :replace, replace: '').strip
     end						  
 
     def formatter
