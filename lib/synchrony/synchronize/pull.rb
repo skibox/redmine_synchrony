@@ -673,6 +673,8 @@ module Synchrony
         remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :journals })
 
         remote_issue.journals.each do |remote_journal|
+          next if remote_journal.details.any? { |d| d.attributes["property"] == "attachment" }
+
           journal = issue.journals.detect { |j| j.synchrony_id.to_s == remote_journal.id.to_s }
 
           next if journal.present?
@@ -914,7 +916,11 @@ module Synchrony
               end
 
               if attachment_journal
-                journal = our_issue.journals.create!(
+                existing_journal = our_issue.journals.detect do |j|
+                  j.synchrony_id.to_s == attachment_journal.id
+                end
+
+                journal = existing_journal || our_issue.journals.create!(
                   user_id:      author_id,
                   notes:        attachment_journal.notes,
                   synchrony_id: attachment_journal.id
@@ -926,6 +932,8 @@ module Synchrony
                   old_value: nil,
                   value:     a.filename,
                 )
+
+                journal.update_columns(created_on: Time.zone.parse(attachment_journal.created_on)) if existing_journal.blank?
               end
 
               attachment_path = Rails.root.join("files/#{a.disk_directory}/#{a.disk_filename}")
