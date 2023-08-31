@@ -571,8 +571,9 @@ module Synchrony
             attributes[:status_id]            = issue_status_id
             attributes[:priority_id]          = issue_priority_id
             attributes[:assigned_to_id]       = assigned_to_id
-            attributes[:author_id]            = author_id
             attributes[:custom_fields]        = custom_fields
+
+            attributes[:author_id] = author_id if our_issue.blank?
 
             if our_issue.present?
               if our_issue.synchronized_at == remote_updated_on
@@ -589,12 +590,11 @@ module Synchrony
                 our_issue.update!(**attributes)
                 our_issue.update_columns(project_id: attributes[:project_id])
               rescue ActiveRecord::RecordInvalid
-                Synchrony::Logger.info "Issue author and assignee replaced with default user."
-                Synchrony::Logger.info "Please add user #{our_issue.author.name} and #{our_issue.assigned_to.name} " \
+                Synchrony::Logger.info "Issue assignee replaced with default user."
+                Synchrony::Logger.info "Please add user #{our_issue.assigned_to.name} " \
                                        "to project members"
                 Synchrony::Logger.info ""
 
-                attributes[:author_id] = local_default_user_id
                 attributes[:assigned_to_id] = local_default_user_id
                 our_issue.update!(**attributes)
               rescue ActiveRecord::StaleObjectError
