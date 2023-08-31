@@ -662,8 +662,10 @@ module Synchrony
 
           if user && remote_user_id
             "user##{remote_user_id}"
+          elsif user
+            "#{user.firstname} #{user.lastname}"
           else
-            user_id
+            "<undefined>"
           end
         end
       end
