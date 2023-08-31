@@ -256,6 +256,10 @@ module Synchrony
         end
       end
 
+      def local_users
+        @local_users ||= User.all
+      end
+
       def local_project
         @local_project ||= issue.project
       end
@@ -554,14 +558,14 @@ module Synchrony
           remote_id = mapped_cf_data[:target_custom_field]
 
           if cfv.custom_field.field_format == "user" && cfv.custom_field.multiple
-            users = User.where(id: cfv.value)
+            users = local_users.select { |lu| cfv.value.include?(lu.id) }
             value = users.map { |u| fetch_remote_user_id(u) }
 
             value == [] ? value = "" : value
 
             custom_fields << { id: remote_id, value: value }
           elsif cfv.custom_field.field_format == "user"
-            user = User.find_by(id: cfv.value)
+            user = local_users.detect { |lu| lu.id == cfv.value }
             value = fetch_remote_user_id(user)
 
             custom_fields << { id: remote_id, value: value || "" }
@@ -636,14 +640,32 @@ module Synchrony
       end
 
       def parse_our_note(journal)
+        parsed_text = parse_visual_editor(journal.notes)
+
         {
           id:   journal.id,
-          text: "*#{journal.user.firstname} #{journal.user.lastname}* #{journal_mark}#{journal.notes}"
+          text: "*#{journal.user.firstname} #{journal.user.lastname}* #{journal_mark}#{parsed_text}"
         }
       end
 
       def journal_mark
         "napisał(a):\n\n"
+      end
+
+      def parse_visual_editor(notes)
+        return notes unless /user#\d+/.match?(notes)
+
+        notes.gsub(/user#\d+/) do |user_id|
+          user = local_users.detect { |lu| lu.id.to_s == user_id.split("#").last }
+
+          remote_user_id = fetch_remote_user_id(user)
+
+          if user && remote_user_id
+            "user##{remote_user_id}"
+          else
+            user_id
+          end
+        end
       end
     end
   end
