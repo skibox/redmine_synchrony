@@ -181,10 +181,12 @@ module Synchrony
       end
 
       def principal_custom_values
-        @principal_custom_values ||= CustomValue.where(
-          customized_type: "Principal",
-          custom_field_id: remote_user_id_cf,
-        )
+        @principal_custom_values ||= CustomValue
+                                      .where(
+                                        customized_type: "Principal",
+                                        custom_field_id: remote_user_id_cf,
+                                      )
+                                      .where.not(value: nil)
       end
 
       def local_synchronizable_switch
@@ -454,6 +456,8 @@ module Synchrony
                 ocf.name == custom_field_data(remote_cf)&.dig(:local_custom_field)
               end
 
+              Synchrony::Logger.info "Syncing custom field '#{remote_cf.name}'"
+
               if our_custom_field.blank?
                 Synchrony::Logger.info "Custom field from remote '#{remote_cf.name}' not found on #{site_settings[:local_site]}. Skipping."
                 Synchrony::Logger.info ""
@@ -461,7 +465,11 @@ module Synchrony
                 next
               end
 
-              next unless custom_field_synchronizable?(our_custom_field)
+              unless custom_field_synchronizable?(our_custom_field)
+                Rails.logger.info "Custom field '#{our_custom_field.name}' is not synchronizable. Skipping."
+
+                next
+              end
 
               if our_custom_field.possible_values.present?
                 if our_custom_field.multiple
@@ -583,6 +591,11 @@ module Synchrony
                 next
               end
 
+              Synchrony::Logger.info "New attributes:"
+              Synchrony::Logger.info "#{attributes.except(:custom_fields).inspect}"
+              Synchrony::Logger.info "Custom fields:"
+              Synchrony::Logger.info "#{custom_fields.inspect}"
+
               begin
                 update_journals(our_issue, remote_issue)
                 update_attachments(our_issue, remote_issue)
@@ -608,6 +621,11 @@ module Synchrony
               attributes[:synchrony_id] = remote_issue.id
 
               new_issue = Issue.new(**attributes)
+
+              Synchrony::Logger.info "New attributes:"
+              Synchrony::Logger.info "#{attributes.except(:custom_fields).inspect}"
+              Synchrony::Logger.info "Custom fields:"
+              Synchrony::Logger.info "#{custom_fields.inspect}"
 
               begin
                 new_issue.save!

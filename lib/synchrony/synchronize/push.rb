@@ -125,6 +125,11 @@ module Synchrony
           return
         end
 
+        if issue_status_data.blank?
+          Synchrony::Logger.info "Issue Status '#{issue.status.name}' not found in configuration"
+          return
+        end
+
         if issue_status_data[:sync] != "true"
           Synchrony::Logger.info "Synchronization is disabled for Status '#{issue_status_data[:local_issue_status]}'"
           return
@@ -301,10 +306,12 @@ module Synchrony
       end
 
       def principal_custom_values
-        @principal_custom_values ||= CustomValue.where(
-          customized_type: "Principal",
-          custom_field_id: remote_user_id_cf,
-        )
+        @principal_custom_values ||= CustomValue
+                                      .where(
+                                        customized_type: "Principal",
+                                        custom_field_id: remote_user_id_cf,
+                                      )
+                                      .where.not(value: nil)
       end
 
       def remote_user_id_cf
