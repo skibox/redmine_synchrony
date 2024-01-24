@@ -257,6 +257,10 @@ module Synchrony
         site_settings[:local_default_tracker]
       end
 
+      def local_default_project_id
+        site_settings[:local_default_project]
+      end
+
       def remote_synchronizable_switch_id
         site_settings[:remote_synchronizable_switch]
       end
@@ -319,11 +323,16 @@ module Synchrony
             next
           end
 
+          min_updated_on = (DateTime.current - 8.minutes).strftime('%Y-%m-%dT%H:%M:%SZ')
+
           project_remote_issues = RemoteIssue.all(
             params: {
               project_id: target_project_id,
-              f:          [""],
-              sort:       "updated_on:desc"
+              f:          ["updated_on", ""],
+              op:         { updated_on: ">=" },
+              v:          { updated_on: [min_updated_on] },
+              sort:       "updated_on:desc",
+              limit:      100,
             }
           )
 
@@ -421,17 +430,19 @@ module Synchrony
             author_id = author&.customized_id || local_default_user_id
 
             # Project matching
-            project_id = if our_issue.present?
-                           target_id = our_issue.custom_field_values.detect { |cf| cf.custom_field == local_initial_project }&.value
+            project_by_tracker = site_settings[:"tracker-projects_set"].detect do |tps|
+              tps[:target_tracker] == tracker_data&.dig(:target_tracker)
+            end
 
-                           target_id.presence || our_issue.project_id
-                         else
-                           project_by_tracker = site_settings[:"tracker-projects_set"].detect do |tps|
-                             tps[:target_tracker] == tracker_data[:target_tracker]
-                           end
+            if project_by_tracker.blank?
+              Synchrony::Logger.info "TRACKER_DATA: #{tracker_data.inspect}"
+            end
 
-                           project_by_tracker[:local_project]
-                         end
+            project_id = if project_by_tracker.blank?
+              local_default_project_id
+            else
+              project_by_tracker[:local_project]
+            end
 
             remote_updated_on = Time.zone.parse(remote_issue.updated_on)
 

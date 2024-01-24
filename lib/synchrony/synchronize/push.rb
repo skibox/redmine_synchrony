@@ -257,7 +257,7 @@ module Synchrony
 
       def issue_priority_data
         parsed_settings[:issue_priorities_set].detect do |s|
-          s[:local_issue_priority] == issue.priority.name
+          s[:local_issue_priority_id] == issue.priority.id.to_s
         end
       end
 
