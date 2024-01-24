@@ -193,7 +193,7 @@ module Synchrony
                                         customized_type: "Principal",
                                         custom_field_id: remote_user_id_cf,
                                       )
-                                      .where.not(value: nil)
+                                      .where.not(value: [nil, ""])
       end
 
       def local_synchronizable_switch
