@@ -454,60 +454,11 @@ module Synchrony
 
             attachments = issue.attachments.select { |a| a.synchrony_id.blank? }
 
-            if attachments.any?
-              attachments.each do |attachment|
-                file = File.open(attachment.diskfile)
-                Synchrony::Logger.info "Uploading file #{file.path}"
-                Synchrony::Logger.info ""
-
-                response = upload_file(file)
-
-                Synchrony::Logger.info "-------------------------------"
-                Synchrony::Logger.info ""
-
-                if response.status == 201 && token = JSON.parse(response.body).dig("upload", "token")
-                  remote_issue.update_attributes(
-                    uploads: [
-                      {
-                        token:        token,
-                        filename:     attachment.filename,
-                        content_type: attachment.content_type,
-                        description:  attachment.description,
-                      }
-                    ]
-                  )
-
-                  r_i = RemoteIssue.find(remote_issue.id, params: { include: :attachments })
-
-                  Attachment.find_by(id: attachment.id)&.update_columns(synchrony_id: r_i.attachments.last.id)
-
-                else
-                  issue.update(
-                    custom_fields: [
-                      { id: local_last_sync_successful.id, value: "0" }
-                    ]
-                  )
-
-                  Synchrony::Logger.info "Attachment #{attachment.id} could not be synced:"
-                  Synchrony::Logger.info "Status: #{response.status}"
-                  Synchrony::Logger.info "Body: #{response.body}"
-
-                  next
-                end
-              end
-            end
+            import_attachments(attachments, remote_issue)
 
             notes = fetch_new_journal_entries(issue, remote_issue)
 
-            if notes.any?
-              notes.each do |note|
-                remote_issue.update_attributes(notes: note[:text])
-
-                r_i = RemoteIssue.find(remote_issue.id, params: { include: :journals })
-
-                Journal.find_by(id: note[:id])&.update_columns(synchrony_id: r_i.journals.last.id)
-              end
-            end
+            import_notes(notes, remote_issue)
           else
             issue.update(
               custom_fields: [
@@ -530,6 +481,10 @@ module Synchrony
                 { id: local_initial_project.id, value: issue.project_id }
               ]
             )
+
+            attachments = issue.attachments.select { |a| a.synchrony_id.blank? }
+
+            import_attachments(attachments, new_remote_issue)
           else
             issue.update(
               custom_fields: [
@@ -582,6 +537,59 @@ module Synchrony
         end
 
         custom_fields
+      end
+
+      def import_attachments(attachments, remote_issue)
+        attachments.each do |attachment|
+          file = File.open(attachment.diskfile)
+          Synchrony::Logger.info "Uploading file #{file.path}"
+          Synchrony::Logger.info ""
+
+          response = upload_file(file)
+
+          Synchrony::Logger.info "-------------------------------"
+          Synchrony::Logger.info ""
+
+          if response.status == 201 && token = JSON.parse(response.body).dig("upload", "token")
+            remote_issue.update_attributes(
+              uploads: [
+                {
+                  token:        token,
+                  filename:     attachment.filename,
+                  content_type: attachment.content_type,
+                  description:  attachment.description,
+                }
+              ]
+            )
+
+            r_i = RemoteIssue.find(remote_issue.id, params: { include: :attachments })
+
+            Attachment.find_by(id: attachment.id)&.update_columns(synchrony_id: r_i.attachments.last.id)
+
+          else
+            issue.update(
+              custom_fields: [
+                { id: local_last_sync_successful.id, value: "0" }
+              ]
+            )
+
+            Synchrony::Logger.info "Attachment #{attachment.id} could not be synced:"
+            Synchrony::Logger.info "Status: #{response.status}"
+            Synchrony::Logger.info "Body: #{response.body}"
+
+            next
+          end
+        end
+      end
+
+      def import_notes(notes, remote_issue)
+        notes.each do |note|
+          remote_issue.update_attributes(notes: note[:text])
+
+          r_i = RemoteIssue.find(remote_issue.id, params: { include: :journals })
+
+          Journal.find_by(id: note[:id])&.update_columns(synchrony_id: r_i.journals.last.id)
+        end
       end
 
       def custom_field_synchronizable?(custom_field)
@@ -679,4 +687,3 @@ module Synchrony
     end
   end
 end
-
