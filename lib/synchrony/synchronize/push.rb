@@ -565,14 +565,14 @@ module Synchrony
           remote_id = mapped_cf_data[:target_custom_field]
 
           if cfv.custom_field.field_format == "user" && cfv.custom_field.multiple
-            users = local_users.select { |lu| cfv.value.include?(lu.id) }
-            value = users.map { |u| fetch_remote_user_id(u) }
+            users = local_users.select { |lu| cfv.value.include?(lu.id.to_s) }
+            value = users.map { |u| fetch_remote_user_id(u) }.compact
 
             value == [] ? value = "" : value
 
             custom_fields << { id: remote_id, value: value }
           elsif cfv.custom_field.field_format == "user"
-            user = local_users.detect { |lu| lu.id == cfv.value }
+            user = local_users.detect { |lu| lu.id.to_s == cfv.value.to_s }
             value = fetch_remote_user_id(user)
 
             custom_fields << { id: remote_id, value: value || "" }
@@ -679,3 +679,4 @@ module Synchrony
     end
   end
 end
+
