@@ -88,6 +88,13 @@ module Synchrony
           terminate(error_type: "remote_synchronizable_switch")
         end
 
+        if remote_task_url_id.blank?
+          Synchrony::Logger.info "Please supply Remote Task URL ID before synchronization"
+          Synchrony::Logger.info ""
+
+          terminate(error_type: "remote_task_url")
+        end
+
         unless check_local_resource(:trackers_set, :target_tracker)
           Synchrony::Logger.info "Please supply all target trackers before synchronization"
           Synchrony::Logger.info ""
@@ -265,6 +272,10 @@ module Synchrony
         site_settings[:remote_synchronizable_switch]
       end
 
+      def remote_task_url_id
+        site_settings[:remote_task_url]
+      end
+
       def sanitize_input(input)
         input.mb_chars.strip
       end
@@ -434,15 +445,13 @@ module Synchrony
               tps[:target_tracker] == tracker_data&.dig(:target_tracker)
             end
 
-            if project_by_tracker.blank?
-              Synchrony::Logger.info "TRACKER_DATA: #{tracker_data.inspect}"
-            end
+            Synchrony::Logger.info "TRACKER_DATA: #{tracker_data.inspect}" if project_by_tracker.blank?
 
             project_id = if project_by_tracker.blank?
-              local_default_project_id
-            else
-              project_by_tracker[:local_project]
-            end
+                           local_default_project_id
+                         else
+                           project_by_tracker[:local_project]
+                         end
 
             remote_updated_on = Time.zone.parse(remote_issue.updated_on)
 
@@ -640,6 +649,12 @@ module Synchrony
 
               begin
                 new_issue.save!
+
+                remote_issue.update_attributes(
+                  custom_fields: [
+                    { id: remote_task_url_id, value: "#{site_settings[:local_site]}/issues/#{new_issue.id}" },
+                  ]
+                )
               rescue ActiveRecord::RecordInvalid
                 Synchrony::Logger.info "Issue author and assignee replaced with default user."
                 Synchrony::Logger.info "Please add user #{new_issue.author.name} and #{new_issue.assigned_to.name} " \
@@ -649,6 +664,12 @@ module Synchrony
                 new_issue.author_id = local_default_user_id
                 new_issue.assigned_to_id = local_default_user_id
                 new_issue.save!
+
+                remote_issue.update_attributes(
+                  custom_fields: [
+                    { id: remote_task_url_id, value: "#{site_settings[:local_site]}/issues/#{new_issue.id}" },
+                  ]
+                )
               rescue ActiveRecord::StaleObjectError
                 Synchrony::Logger.info "Issue was updated by another user. Skipping."
                 Synchrony::Logger.info ""
