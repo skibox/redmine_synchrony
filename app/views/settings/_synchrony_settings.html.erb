@@ -79,12 +79,11 @@
    local_synchronizable_switch_id = redmine&.dig('local_synchronizable_switch')
    local_remote_url_id = redmine&.dig('local_remote_url')
    local_last_sync_successful_id = redmine&.dig('local_last_sync_successful')
-   local_initial_project_id = redmine&.dig('local_initial_project')
 
    custom_fields = all_custom_fields.select do |cf|
       %w[bool int float link list string text user].include?(cf.field_format) &&
       ["Remote User ID"].exclude?(cf.name) &&
-      [local_synchronizable_switch_id, local_remote_url_id, local_last_sync_successful_id, local_initial_project_id].exclude?(cf.id.to_s)
+      [local_synchronizable_switch_id, local_remote_url_id, local_last_sync_successful_id].exclude?(cf.id.to_s)
     end
 
    issue_custom_fields = all_custom_fields.select do |cf|
@@ -154,16 +153,6 @@
                       options_from_collection_for_select(issue_custom_fields, 'id', 'name', redmine ? redmine['local_last_sync_successful'] : nil),
                       style: "width: 300px;",
                       include_blank: true, id: "settings_redmine_local_last_sync_successful", class: 'required' %>
-    </p>
-
-    <p style="padding-left: 0px">
-      <label style="margin-left: 0px; width: 250px; text-align: left" for="settings_redmine_local_initial_project">
-        <%= t('synchrony.settings.local_initial_project') %>
-      </label>
-      <%= select_tag 'settings[local_initial_project]',
-                      options_from_collection_for_select(issue_custom_fields, 'id', 'name', redmine ? redmine['local_initial_project'] : nil),
-                      style: "width: 300px;",
-                      include_blank: true, id: "settings_redmine_local_initial_project", class: 'required' %>
     </p>
 
     <br>

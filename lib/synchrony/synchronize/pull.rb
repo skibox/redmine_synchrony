@@ -74,13 +74,6 @@ module Synchrony
           terminate(error_type: "local_remote_url")
         end
 
-        if local_initial_project.blank?
-          Synchrony::Logger.info "Please supply Local initial project before synchronization"
-          Synchrony::Logger.info ""
-
-          terminate(error_type: "local_initial_project")
-        end
-
         if remote_synchronizable_switch_id.blank?
           Synchrony::Logger.info "Please supply Remote Synchronizable Switch ID before synchronization"
           Synchrony::Logger.info ""
@@ -206,10 +199,6 @@ module Synchrony
 
       def local_last_sync_successful
         @local_last_sync_successful ||= IssueCustomField.find_by(id: site_settings[:local_last_sync_successful])
-      end
-
-      def local_initial_project
-        @local_initial_project ||= IssueCustomField.find_by(id: site_settings[:local_initial_project])
       end
 
       def project_data(issue)
@@ -458,7 +447,6 @@ module Synchrony
             custom_fields = [
               { id: local_synchronizable_switch.id, value: "1" },
               { id: local_remote_url.id, value: "#{site_settings[:target_site]}/issues/#{remote_issue.id}" },
-              { id: local_initial_project.id, value: project_id }
             ]
 
             # Custom fields matching
@@ -709,7 +697,6 @@ module Synchrony
           local_remote_url.name,
           remote_user_id_cf.name,
           local_last_sync_successful.name,
-          local_initial_project.name,
         ].include?(custom_field.name)
       end
 

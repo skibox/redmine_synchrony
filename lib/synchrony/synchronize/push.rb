@@ -76,13 +76,6 @@ module Synchrony
           return
         end
 
-        if local_initial_project.blank?
-          Synchrony::Logger.info "Please supply Local initial project before synchronization"
-          Synchrony::Logger.info ""
-
-          return
-        end
-
         if local_last_sync_successful.blank?
           Synchrony::Logger.info "Please supply Local last sync successful before synchronization"
           Synchrony::Logger.info ""
@@ -223,10 +216,6 @@ module Synchrony
 
       def local_remote_url
         @local_remote_url ||= IssueCustomField.find_by(id: parsed_settings[:local_remote_url])
-      end
-
-      def local_initial_project
-        @local_initial_project ||= IssueCustomField.find_by(id: parsed_settings[:local_initial_project])
       end
 
       def local_last_sync_successful
@@ -478,7 +467,6 @@ module Synchrony
             issue.update(
               custom_fields: [
                 { id: local_remote_url.id, value: generate_remote_issue_url(new_remote_issue) },
-                { id: local_initial_project.id, value: issue.project_id }
               ]
             )
 
@@ -489,7 +477,6 @@ module Synchrony
             issue.update(
               custom_fields: [
                 { id: local_last_sync_successful.id, value: "0" },
-                { id: local_initial_project.id, value: issue.project_id }
               ]
             )
 
@@ -610,7 +597,6 @@ module Synchrony
           local_remote_url.name,
           remote_user_id_cf.name,
           local_last_sync_successful.name,
-          local_initial_project.name,
         ].include?(custom_field.name)
       end
 
