@@ -448,6 +448,8 @@ module Synchrony
             notes = fetch_new_journal_entries(issue, remote_issue)
 
             import_notes(notes, remote_issue)
+
+            link_new_detailed_journal_entry(issue, remote_issue)
           else
             issue.update(
               custom_fields: [
@@ -575,7 +577,10 @@ module Synchrony
 
           r_i = RemoteIssue.find(remote_issue.id, params: { include: :journals })
 
-          Journal.find_by(id: note[:id])&.update_columns(synchrony_id: r_i.journals.last.id)
+          Journal.find_by(id: note[:id])&.update_columns(
+            created_on: Time.zone.parse(r_i.journals.last.created_on.to_s),
+            synchrony_id: r_i.journals.last.id,
+          )
         end
       end
 
@@ -640,12 +645,28 @@ module Synchrony
         end.compact
       end
 
+      def link_new_detailed_journal_entry(issue, remote_issue)
+        last_journal = issue.journals.last
+
+        return if last_journal.notes.present?
+
+        reloaded_remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :journals })
+
+        last_remote_note = reloaded_remote_issue.journals.last
+
+        last_journal.update_columns(
+          synchrony_id: last_remote_note.id,
+          created_on: Time.zone.parse(last_remote_note.created_on.to_s),
+        )
+      end
+
       def parse_our_note(journal)
         parsed_text = parse_visual_editor(journal.notes)
+        text = "*#{journal.user.firstname} #{journal.user.lastname}* #{journal_mark}#{parsed_text}"
 
         {
           id:   journal.id,
-          text: "*#{journal.user.firstname} #{journal.user.lastname}* #{journal_mark}#{parsed_text}"
+          text: text,
         }
       end
 
