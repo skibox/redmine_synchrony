@@ -573,7 +573,11 @@ module Synchrony
 
       def import_notes(notes, remote_issue)
         notes.each do |note|
-          remote_issue.update_attributes(notes: note[:text])
+          unless remote_issue.update_attributes(notes: note[:text])
+            copied_issue = RemoteIssue.find(remote_issue.id, params: { include: :journals })
+            copied_issue.update_attributes(notes: note[:text])
+            # don't ask, please
+          end
 
           r_i = RemoteIssue.find(remote_issue.id, params: { include: :journals })
 
