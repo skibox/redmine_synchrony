@@ -741,7 +741,8 @@ module Synchrony
                 value:     attrs["new_value"],
               }
 
-              if options[:property] == "cf"
+              case options[:property]
+              when "cf"
                 our_custom_field = our_custom_fields.detect do |ocf|
                   ocf.name == custom_field_data_by_id(options[:prop_key])&.dig(:local_custom_field)
                 end
@@ -784,6 +785,18 @@ module Synchrony
                   options[:old_value] = old_user&.id
                   options[:value] = new_user&.id
                 end
+              when "relation"
+                old_issue = Issue.select(:id).find_by(synchrony_id: options[:old_value])
+
+                next if options[:old_value].present? && old_issue.blank?
+
+                options[:old_value] = old_issue&.id
+
+                new_issue = Issue.select(:id).find_by(synchrony_id: options[:value])
+
+                next if options[:value].present? && new_issue.blank?
+
+                options[:value] = new_issue&.id
               end
 
               case options[:prop_key]
