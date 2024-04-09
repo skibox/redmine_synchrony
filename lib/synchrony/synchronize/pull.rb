@@ -1003,66 +1003,90 @@ module Synchrony
       def update_relations(our_issue, remote_issue)
         Rails.logger.info "Updating relations for issue #{our_issue.id}:"
 
-          incoming_relations = remote_issue.relations.map(&:attributes)
-          
-          incoming_relations_to = incoming_relations.select { |ir| ir["issue_to_id"] != remote_issue.id.to_s }
-          # incoming_relations_from = incoming_relations.select { |ir| ir["issue_to_id"] == remote_issue.id.to_s }
+        incoming_relations = remote_issue.relations.map(&:attributes)
+        
+        incoming_remote_issue_to_ids = incoming_relations.pluck("issue_to_id")
+        incoming_remote_issue_from_ids = incoming_relations.pluck("issue_id")
 
-          current_relations  = our_issue.relations.map(&:attributes)
+        incoming_our_issues = Issue.where(
+          synchrony_id: incoming_remote_issue_to_ids + incoming_remote_issue_from_ids
+        )
 
-          incoming_remote_issue_to_ids = incoming_relations_to.pluck("issue_to_id")
-          incoming_our_issues_to = Issue.where(synchrony_id: incoming_remote_issue_to_ids)
+        incoming_our_issues_to = incoming_our_issues.select { |i| incoming_remote_issue_to_ids.include?(i.synchrony_id.to_s) }
+        incoming_our_issues_from = incoming_our_issues.select { |i| incoming_remote_issue_from_ids.include?(i.synchrony_id.to_s) }
 
-          incoming_relations_attributes = incoming_relations_to.map do |relation|
-            incoming_our_issue_to = incoming_our_issues_to.detect do |i|
-              i.synchrony_id.to_s == relation["issue_to_id"]
-            end
-
-            if incoming_our_issue_to.blank?
-              Rails.logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
-
-              next
-            end
-
-            {
-              "relation_type" => relation["relation_type"],
-              "issue_id"      => our_issue.id,
-              "issue_to_id"   => incoming_our_issue_to.id,
-              "delay"         => relation["delay"],
-            }
+        incoming_relations_attributes = incoming_relations.map do |relation|
+          incoming_our_issue_to = incoming_our_issues_to.detect do |i|
+            i.synchrony_id.to_s == relation["issue_to_id"]
           end
 
-          incoming_relations_attributes = incoming_relations_attributes.compact.sort_by do |r|
-            "#{r["relation_type"]}-#{r["issue_to_id"]}"
+          if incoming_our_issue_to.blank?
+            Rails.logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
+
+            next
           end
 
-          current_relations_attributes = current_relations.sort_by do |r|
-            "#{r["relation_type"]}-#{r["issue_to_id"]}"
+          incoming_our_issue_from = incoming_our_issues_from.detect do |i|
+            i.synchrony_id.to_s == relation["issue_id"]
           end
 
-          
-          return if incoming_relations_attributes == current_relations_attributes
+          if incoming_our_issue_from.blank?
+            Rails.logger.info "Issue with Remote ID #{relation["issue_from_id"]} not found. Skipping."
 
-          relations_attributes_to_delete = current_relations_attributes - incoming_relations_attributes
-          relations_attributes_to_add = incoming_relations_attributes - current_relations_attributes
+            next
+          end
 
-          relations_to_delete = IssueRelation.where(
-            issue_from_id: our_issue.id,
-            issue_to_id: relations_attributes_to_delete.pluck("issue_to_id")
+          {
+            "relation_type" => relation["relation_type"],
+            "issue_from_id" => incoming_our_issue_from.id,
+            "issue_to_id"   => incoming_our_issue_to.id,
+            "delay"         => relation["delay"],
+          }
+        end
+
+        incoming_relations_attributes = incoming_relations_attributes.compact.sort_by do |r|
+          "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
+        end
+
+        current_relations = our_issue.relations.map do |r|
+          {
+            "relation_type" => r.relation_type,
+            "issue_from_id" => r.issue_from_id.to_s,
+            "issue_to_id"   => r.issue_to_id.to_s,
+            "delay"         => r.delay,
+          }
+        end
+
+        current_relations_attributes = current_relations.sort_by do |r|
+          "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
+        end
+
+        return if incoming_relations_attributes == current_relations_attributes
+
+        relations_attributes_to_delete = current_relations_attributes - incoming_relations_attributes
+        relations_attributes_to_add = incoming_relations_attributes - current_relations_attributes
+
+        relations_attributes_to_delete.each do |attributes|
+          ir = IssueRelation.find_by(
+            relation_type: attributes["relation_type"],
+            issue_from_id: attributes["issue_from_id"],
+            issue_to_id:   attributes["issue_to_id"],
+            delay:         attributes["delay"],
           )
 
-          relations_to_delete.delete_all
+          ir&.destroy
+        end
 
-          new_relations = relations_attributes_to_add.map do |attributes|
-            IssueRelation.new(
-              issue_from_id: our_issue.id,
-              issue_to_id:   attributes["issue_to_id"],
-              relation_type: attributes["relation_type"],
-              delay: attributes["delay"],
-            )
-          end
+        new_relations = relations_attributes_to_add.map do |attributes|
+          IssueRelation.new(
+            relation_type: attributes["relation_type"],
+            issue_from_id: attributes["issue_from_id"],
+            issue_to_id:   attributes["issue_to_id"],
+            delay:         attributes["delay"],
+          )
+        end
 
-          new_relations.each(&:save!)
+        new_relations.each(&:save!)
       end
     end
   end
