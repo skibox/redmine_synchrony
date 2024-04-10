@@ -7,12 +7,15 @@ module Synchrony
         RemoteIssueStatus,
         RemoteIssuePriority,
         RemoteProject,
+        RemoteRelation,
       ].freeze
 
       def initialize(issue)
         @issue = Issue
                  .includes(
-                   :attachments, :journals,
+                   :attachments, :journals, 
+                   relations_to: :issue_to,
+                   relations_from: :issue_from,
                    project: :issues,
                  )
                  .find_by(id: issue.id)
@@ -400,7 +403,7 @@ module Synchrony
 
       def push_issue
         issue.skip_synchronization = true
-
+        
         custom_fields = [
           { id: remote_cf_for_author_id, value: target_author_id.to_i },
           { id: remote_task_url_id, value: generate_issue_url },
@@ -430,7 +433,10 @@ module Synchrony
         Synchrony::Logger.info attributes
 
         begin
-          remote_issue = RemoteIssue.find(issue.synchrony_id, params: { include: %i[journals attachments] })
+          remote_issue = RemoteIssue.find(
+            issue.synchrony_id,
+            params: { include: %i[journals attachments relations] }
+          )
 
           if remote_issue.update_attributes(attributes)
             issue.update_columns(synchronized_at: DateTime.current)
@@ -448,6 +454,8 @@ module Synchrony
             notes = fetch_new_journal_entries(issue, remote_issue)
 
             import_notes(notes, remote_issue)
+
+            import_relations(issue, remote_issue)
           else
             issue.update(
               custom_fields: [
@@ -565,6 +573,118 @@ module Synchrony
             Synchrony::Logger.info "Body: #{response.body}"
 
             next
+          end
+        end
+      end
+
+      def import_relations(our_issue, remote_issue)
+        Rails.logger.info "Updating relations for issue #{our_issue.id}:"
+
+        incoming_relations = remote_issue.respond_to?(:relations) ? remote_issue.relations.map(&:attributes) : []
+        
+        incoming_remote_issue_to_ids = incoming_relations.pluck("issue_to_id")
+        incoming_remote_issue_from_ids = incoming_relations.pluck("issue_id")
+
+        incoming_our_issues = Issue.where(
+          synchrony_id: incoming_remote_issue_to_ids + incoming_remote_issue_from_ids,
+        )
+
+        incoming_our_issues_to = incoming_our_issues.select { |i| incoming_remote_issue_to_ids.include?(i.synchrony_id.to_s) }
+        incoming_our_issues_from = incoming_our_issues.select { |i| incoming_remote_issue_from_ids.include?(i.synchrony_id.to_s) }
+
+        incoming_relations_attributes = incoming_relations.map do |relation|
+          incoming_our_issue_to = incoming_our_issues_to.detect do |i|
+            i.synchrony_id.to_s == relation["issue_to_id"]
+          end
+
+          if incoming_our_issue_to.blank?
+            Rails.logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
+
+            next
+          end
+
+          incoming_our_issue_from = incoming_our_issues_from.detect do |i|
+            i.synchrony_id.to_s == relation["issue_id"]
+          end
+
+          if incoming_our_issue_from.blank?
+            Rails.logger.info "Issue with Remote ID #{relation["issue_from_id"]} not found. Skipping."
+
+            next
+          end
+
+          {
+            "relation_type" => relation["relation_type"],
+            "issue_from_id" => incoming_our_issue_from.synchrony_id.to_s,
+            "issue_to_id"   => incoming_our_issue_to.synchrony_id.to_s,
+            "delay"         => relation["delay"] || "",
+          }
+        end
+
+        incoming_relations_attributes = incoming_relations_attributes.compact.sort_by do |r|
+          "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
+        end
+
+        all_our_relations = our_issue.relations_to + our_issue.relations_from
+
+        current_relations = all_our_relations.map do |r|
+          next if r.issue_to.synchrony_id.blank? || r.issue_from.synchrony_id.blank?
+
+          {
+            "relation_type" => r.relation_type,
+            "issue_from_id" => r.issue_from.synchrony_id.to_s,
+            "issue_to_id"   => r.issue_to.synchrony_id.to_s,
+            "delay"         => r.delay || "",
+          }
+        end.compact
+
+        current_relations_attributes = current_relations.sort_by do |r|
+          "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
+        end
+
+        return if incoming_relations_attributes == current_relations_attributes
+
+        relations_attributes_to_delete = current_relations_attributes - incoming_relations_attributes
+
+        relations_attributes_to_add = if incoming_relations_attributes.any? 
+                                        current_relations_attributes - incoming_relations_attributes
+                                      else
+                                        current_relations_attributes
+                                      end
+
+        relations_attributes_to_delete.each do |attributes|
+          remote_relation = incoming_relations.detect do |r|
+            r["relation_type"] == attributes["relation_type"] &&
+            r["issue_from_id"] == attributes["issue_from_id"] &&
+            r["issue_to_id"] == attributes["issue_to_id"] &&
+            r["delay"] == attributes["delay"]
+          end
+
+          remote_relation&.destroy
+        end
+
+        new_relations = relations_attributes_to_add.each do |attributes|
+          conn = Faraday.new(url: "#{target_site}issues/#{attributes["issue_from_id"]}/relations.json") do |faraday|
+            faraday.response :logger,
+                             Synchrony::Logger,
+                             { headers: true, bodies: true, errors: true, log_level: :debug }
+          end
+
+          body = {
+            relation: {
+              relation_type: attributes["relation_type"],
+              issue_to_id:   attributes["issue_to_id"],
+              delay:         attributes["delay"],
+            }
+          }
+          
+          post_body = body.to_json
+
+          conn.post do |req|
+            req.options.timeout              = 5
+            req.headers['Content-Type']      = 'application/json'
+            req.headers["X-Redmine-API-Key"] = parsed_settings[:api_key]
+            req.body                         = post_body
           end
         end
       end
