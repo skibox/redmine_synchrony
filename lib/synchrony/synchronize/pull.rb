@@ -7,6 +7,7 @@ module Synchrony
         RemoteIssueStatus,
         RemoteIssuePriority,
         RemoteProject,
+        RemoteIssue::Relation,
       ].freeze
 
       def initialize(site_settings)
@@ -333,6 +334,7 @@ module Synchrony
               v:          { updated_on: [min_updated_on] },
               sort:       "updated_on:desc",
               limit:      100,
+              include:    :relations,
             }
           )
 
@@ -607,6 +609,7 @@ module Synchrony
               begin
                 update_journals(our_issue, remote_issue)
                 update_attachments(our_issue, remote_issue)
+                update_relations(our_issue, remote_issue)
 
                 our_issue.update!(**attributes)
                 our_issue.update_columns(project_id: attributes[:project_id])
@@ -667,6 +670,7 @@ module Synchrony
 
               update_journals(new_issue, remote_issue)
               update_attachments(new_issue, remote_issue)
+              update_relations(new_issue, remote_issue)
 
               created_issues += 1
             end
@@ -738,7 +742,8 @@ module Synchrony
                 value:     attrs["new_value"],
               }
 
-              if options[:property] == "cf"
+              case options[:property]
+              when "cf"
                 our_custom_field = our_custom_fields.detect do |ocf|
                   ocf.name == custom_field_data_by_id(options[:prop_key])&.dig(:local_custom_field)
                 end
@@ -781,6 +786,18 @@ module Synchrony
                   options[:old_value] = old_user&.id
                   options[:value] = new_user&.id
                 end
+              when "relation"
+                old_issue = Issue.select(:id).find_by(synchrony_id: options[:old_value])
+
+                next if options[:old_value].present? && old_issue.blank?
+
+                options[:old_value] = old_issue&.id
+
+                new_issue = Issue.select(:id).find_by(synchrony_id: options[:value])
+
+                next if options[:value].present? && new_issue.blank?
+
+                options[:value] = new_issue&.id
               end
 
               case options[:prop_key]
@@ -995,6 +1012,94 @@ module Synchrony
             next
           end
         end
+      end
+
+      def update_relations(our_issue, remote_issue)
+        Rails.logger.info "Updating relations for issue #{our_issue.id}:"
+
+        incoming_relations = remote_issue.relations.map(&:attributes)
+        
+        incoming_remote_issue_to_ids = incoming_relations.pluck("issue_to_id")
+        incoming_remote_issue_from_ids = incoming_relations.pluck("issue_id")
+
+        incoming_our_issues = Issue.where(
+          synchrony_id: incoming_remote_issue_to_ids + incoming_remote_issue_from_ids
+        )
+
+        incoming_our_issues_to = incoming_our_issues.select { |i| incoming_remote_issue_to_ids.include?(i.synchrony_id.to_s) }
+        incoming_our_issues_from = incoming_our_issues.select { |i| incoming_remote_issue_from_ids.include?(i.synchrony_id.to_s) }
+
+        incoming_relations_attributes = incoming_relations.map do |relation|
+          incoming_our_issue_to = incoming_our_issues_to.detect do |i|
+            i.synchrony_id.to_s == relation["issue_to_id"]
+          end
+
+          if incoming_our_issue_to.blank?
+            Rails.logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
+
+            next
+          end
+
+          incoming_our_issue_from = incoming_our_issues_from.detect do |i|
+            i.synchrony_id.to_s == relation["issue_id"]
+          end
+
+          if incoming_our_issue_from.blank?
+            Rails.logger.info "Issue with Remote ID #{relation["issue_id"]} not found. Skipping."
+
+            next
+          end
+
+          {
+            "relation_type" => relation["relation_type"],
+            "issue_from_id" => incoming_our_issue_from.id,
+            "issue_to_id"   => incoming_our_issue_to.id,
+            "delay"         => relation["delay"],
+          }
+        end
+
+        incoming_relations_attributes = incoming_relations_attributes.compact.sort_by do |r|
+          "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
+        end
+
+        current_relations = our_issue.relations.map do |r|
+          {
+            "relation_type" => r.relation_type,
+            "issue_from_id" => r.issue_from_id.to_s,
+            "issue_to_id"   => r.issue_to_id.to_s,
+            "delay"         => r.delay,
+          }
+        end
+
+        current_relations_attributes = current_relations.sort_by do |r|
+          "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
+        end
+
+        return if incoming_relations_attributes == current_relations_attributes
+
+        relations_attributes_to_delete = current_relations_attributes - incoming_relations_attributes
+        relations_attributes_to_add = incoming_relations_attributes - current_relations_attributes
+
+        relations_attributes_to_delete.each do |attributes|
+          ir = IssueRelation.find_by(
+            relation_type: attributes["relation_type"],
+            issue_from_id: attributes["issue_from_id"],
+            issue_to_id:   attributes["issue_to_id"],
+          )
+
+          ir&.destroy
+        end
+
+        new_relations = relations_attributes_to_add.map do |attributes|
+          IssueRelation.new(
+            relation_type: attributes["relation_type"],
+            issue_from_id: attributes["issue_from_id"],
+            issue_to_id:   attributes["issue_to_id"],
+            delay:         attributes["delay"],
+          )
+        end
+
+        new_relations.each(&:save!)
       end
     end
   end
