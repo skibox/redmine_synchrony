@@ -8,6 +8,7 @@ module Synchrony
         RemoteIssuePriority,
         RemoteProject,
         RemoteIssue::Relation,
+        RemoteIssue::Watcher,
       ].freeze
 
       def initialize(site_settings)
@@ -334,7 +335,6 @@ module Synchrony
               v:          { updated_on: [min_updated_on] },
               sort:       "updated_on:desc",
               limit:      100,
-              include:    :relations,
             }
           )
 
@@ -353,7 +353,7 @@ module Synchrony
 
           our_issues = Issue
                        .includes(
-                         :project, :journals,
+                         :project, :journals, :relations_to, :relations_from, :watchers
                        )
                        .where(
                          synchrony_id: remote_issues_ids,
@@ -610,6 +610,7 @@ module Synchrony
                 update_journals(our_issue, remote_issue)
                 update_attachments(our_issue, remote_issue)
                 update_relations(our_issue, remote_issue)
+                update_watchers(our_issue, remote_issue)
 
                 our_issue.update!(**attributes)
                 our_issue.update_columns(project_id: attributes[:project_id])
@@ -671,6 +672,7 @@ module Synchrony
               update_journals(new_issue, remote_issue)
               update_attachments(new_issue, remote_issue)
               update_relations(new_issue, remote_issue)
+              update_watchers(new_issue, remote_issue)
 
               created_issues += 1
             end
@@ -1017,6 +1019,8 @@ module Synchrony
       def update_relations(our_issue, remote_issue)
         Rails.logger.info "Updating relations for issue #{our_issue.id}:"
 
+        remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :relations })
+
         incoming_relations = remote_issue.relations.map(&:attributes)
         
         incoming_remote_issue_to_ids = incoming_relations.pluck("issue_to_id")
@@ -1052,9 +1056,9 @@ module Synchrony
 
           {
             "relation_type" => relation["relation_type"],
-            "issue_from_id" => incoming_our_issue_from.id,
-            "issue_to_id"   => incoming_our_issue_to.id,
-            "delay"         => relation["delay"],
+            "issue_from_id" => incoming_our_issue_from.id.to_s,
+            "issue_to_id"   => incoming_our_issue_to.id.to_s,
+            "delay"         => relation["delay"] || "",
           }
         end
 
@@ -1067,7 +1071,7 @@ module Synchrony
             "relation_type" => r.relation_type,
             "issue_from_id" => r.issue_from_id.to_s,
             "issue_to_id"   => r.issue_to_id.to_s,
-            "delay"         => r.delay,
+            "delay"         => r.delay || "",
           }
         end
 
@@ -1090,16 +1094,45 @@ module Synchrony
           ir&.destroy
         end
 
-        new_relations = relations_attributes_to_add.map do |attributes|
-          IssueRelation.new(
+        relations_attributes_to_add.each do |attributes|
+          IssueRelation.create!(
             relation_type: attributes["relation_type"],
             issue_from_id: attributes["issue_from_id"],
             issue_to_id:   attributes["issue_to_id"],
             delay:         attributes["delay"],
           )
         end
+      end
 
-        new_relations.each(&:save!)
+      def update_watchers(our_issue, remote_issue)
+        Rails.logger.info "Updating watchers for issue #{our_issue.id}:"
+
+        remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :watchers })
+
+        incoming_remote_watchers = remote_issue.watchers.map(&:attributes)
+
+        incoming_remote_watchers_ids = incoming_remote_watchers.pluck("id")
+
+        our_watchers_principals = principal_custom_values.select do |pcv|
+          incoming_remote_watchers_ids.include?(pcv.value)
+        end
+
+        our_watcher_ids = our_watchers_principals.map(&:customized_id)
+
+        our_watchers = User.where(id: our_watcher_ids)
+
+        current_watchers = our_issue.watchers
+
+        current_watchers_ids = current_watchers.pluck(:user_id)
+
+        watchers_to_delete = current_watchers_ids - our_watcher_ids
+        watchers_to_add = our_watcher_ids - current_watchers_ids
+
+        Watcher.where(watchable: our_issue, user_id: watchers_to_delete).delete_all
+
+        watchers_to_add.each do |user_id|
+          Watcher.create!(watchable: our_issue, user_id: user_id)
+        end
       end
     end
   end

@@ -8,6 +8,7 @@ module Synchrony
         RemoteIssuePriority,
         RemoteProject,
         RemoteIssue::Relation,
+        RemoteIssue::Watcher,
       ].freeze
 
       def initialize(issue)
@@ -458,6 +459,8 @@ module Synchrony
             link_new_detailed_journal_entry(issue, remote_issue)
 
             import_relations(issue, remote_issue)
+
+            import_watchers(issue, remote_issue)
           else
             issue.update(
               custom_fields: [
@@ -483,6 +486,8 @@ module Synchrony
             attachments = issue.attachments.select { |a| a.synchrony_id.blank? }
 
             import_attachments(attachments, new_remote_issue)
+
+            import_watchers(issue, remote_issue)
           else
             issue.update(
               custom_fields: [
@@ -690,6 +695,74 @@ module Synchrony
             req.headers["X-Redmine-API-Key"] = parsed_settings[:api_key]
             req.body                         = post_body
           end
+        end
+      end
+
+      def import_watchers(our_issue, remote_issue)
+        Rails.logger.info "Updating watchers for issue #{our_issue.id}:"
+
+        remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :watchers })
+
+        incoming_remote_watchers = remote_issue.watchers.map(&:attributes)
+
+        incoming_remote_watchers_ids = incoming_remote_watchers.pluck("id")
+
+        incoming_watchers_principals = principal_custom_values.select do |pcv|
+          incoming_remote_watchers_ids.include?(pcv.value)
+        end
+
+        current_watchers = our_issue.watchers
+
+        current_watchers_ids = current_watchers.pluck(:user_id)
+
+        current_watchers_principals = principal_custom_values.select do |pcv|
+          current_watchers_ids.include?(pcv.customized_id)
+        end
+
+        current_watchers_remote_ids = current_watchers_principals.map(&:value)
+
+        return if incoming_remote_watchers_ids.sort == current_watchers_remote_ids.sort
+
+        watchers_to_delete = incoming_remote_watchers_ids - current_watchers_remote_ids
+        watchers_to_add = current_watchers_remote_ids - incoming_remote_watchers_ids
+
+        watchers_to_delete.each do |user_id|
+          conn = Faraday.new(url: "#{target_site}issues/#{remote_issue.id}/watchers/#{user_id}.json") do |faraday|
+            faraday.response :logger,
+                             Synchrony::Logger,
+                             { headers: true, bodies: true, errors: true, log_level: :debug }
+          end
+
+          conn.delete do |req|
+            req.options.timeout              = 5
+            req.headers['Content-Type']      = 'application/json'
+            req.headers["X-Redmine-API-Key"] = parsed_settings[:api_key]
+          end
+        end
+
+        begin
+          conn = Faraday.new(url: "#{target_site}issues/#{remote_issue.id}/watchers.json") do |faraday|
+            faraday.response :logger,
+                              Synchrony::Logger,
+                              { headers: true, bodies: true, errors: true, log_level: :debug }
+          end
+
+          body = {
+            watcher: {
+              user_ids: watchers_to_add,
+            }
+          }
+
+          post_body = body.to_json
+
+          conn.post do |req|
+            req.options.timeout              = 5
+            req.headers['Content-Type']      = 'application/json'
+            req.headers["X-Redmine-API-Key"] = parsed_settings[:api_key]
+            req.body                         = post_body
+          end
+        rescue StandardError
+          Synchrony::Logger.info "One of the watchers could not be added to issue #{remote_issue.id}"
         end
       end
 

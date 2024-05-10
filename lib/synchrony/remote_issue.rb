@@ -6,6 +6,12 @@ module Synchrony
       self.timeout = 5
     end
 
+    class Watcher < ActiveResource::Base
+      self.format = :xml
+      self.element_name = 'watcher'
+      self.timeout = 5
+    end
+
     self.format = :xml
     self.element_name = 'issue'
     self.timeout = 5
