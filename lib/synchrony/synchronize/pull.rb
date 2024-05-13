@@ -431,6 +431,13 @@ module Synchrony
 
             author_id = author&.customized_id || local_default_user_id
 
+            # Parent issue matching
+            parent_issue_id = if remote_issue.respond_to?(:parent)
+                                Issue.find_by(synchrony_id: remote_issue.parent.id)&.id
+                              else
+                                nil
+                              end
+
             # Project matching
             project_by_tracker = site_settings[:"tracker-projects_set"].detect do |tps|
               tps[:target_tracker] == tracker_data&.dig(:target_tracker)
@@ -614,6 +621,16 @@ module Synchrony
 
                 our_issue.update!(**attributes)
                 our_issue.update_columns(project_id: attributes[:project_id])
+
+                parent_id = if parent_issue_id.present?
+                              parent_issue_id
+                            elsif parent_issue_id.blank? && our_issue.parent_id.present?
+                              our_issue.parent_id
+                            else
+                              nil
+                            end
+
+                our_issue.update!(parent_id: parent_id) if parent_id.present?
               rescue ActiveRecord::RecordInvalid
                 Synchrony::Logger.info "Issue assignee replaced with default user."
                 Synchrony::Logger.info "Please add user #{our_issue.assigned_to.name} " \
@@ -789,13 +806,13 @@ module Synchrony
                   options[:value] = new_user&.id
                 end
               when "relation"
-                old_issue = Issue.select(:id).find_by(synchrony_id: options[:old_value])
+                old_issue = Issue.find_by(synchrony_id: options[:old_value])
 
                 next if options[:old_value].present? && old_issue.blank?
 
                 options[:old_value] = old_issue&.id
 
-                new_issue = Issue.select(:id).find_by(synchrony_id: options[:value])
+                new_issue = Issue.find_by(synchrony_id: options[:value])
 
                 next if options[:value].present? && new_issue.blank?
 
@@ -815,6 +832,18 @@ module Synchrony
                 end
 
                 options[:value] = new_value&.customized_id || local_default_user_id
+              when "child_id"
+                old_issue = Issue.find_by(synchrony_id: options[:old_value])
+
+                next if options[:old_value].present? && old_issue.blank?
+
+                options[:old_value] = old_issue&.id
+
+                new_issue = Issue.find_by(synchrony_id: options[:value])
+
+                next if options[:value].present? && new_issue.blank?
+
+                options[:value] = new_issue&.id
               when "status_id"
                 previous_issue_status = remote_issue_statuses.detect do |ris|
                   ris.id.to_s == options[:old_value]
@@ -1021,6 +1050,8 @@ module Synchrony
 
         remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :relations })
 
+        return unless remote_issue.respond_to?(:relations)
+
         incoming_relations = remote_issue.relations.map(&:attributes)
         
         incoming_remote_issue_to_ids = incoming_relations.pluck("issue_to_id")
@@ -1084,6 +1115,7 @@ module Synchrony
         relations_attributes_to_delete = current_relations_attributes - incoming_relations_attributes
         relations_attributes_to_add = incoming_relations_attributes - current_relations_attributes
 
+
         relations_attributes_to_delete.each do |attributes|
           ir = IssueRelation.find_by(
             relation_type: attributes["relation_type"],
@@ -1108,6 +1140,8 @@ module Synchrony
         Rails.logger.info "Updating watchers for issue #{our_issue.id}:"
 
         remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :watchers })
+
+        return unless remote_issue.respond_to?(:watchers)
 
         incoming_remote_watchers = remote_issue.watchers.map(&:attributes)
 

@@ -12,14 +12,15 @@ module Synchrony
       ].freeze
 
       def initialize(issue)
-        @issue = Issue
-                 .includes(
-                   :attachments, :journals, 
-                   relations_to: :issue_to,
-                   relations_from: :issue_from,
-                   project: :issues,
-                 )
-                 .find_by(id: issue.id)
+        @issue ||= Issue
+                    .includes(
+                      :status, :priority,
+                      :attachments, :journals, 
+                      relations_to: :issue_to,
+                      relations_from: :issue_from,
+                      project: :issues,
+                    )
+                    .find_by(id: issue.id)
       end
 
       def call
@@ -413,11 +414,11 @@ module Synchrony
 
         custom_fields = parse_custom_fields(custom_fields)
 
+        parent_issue_id = Issue.find_by(id: issue.parent_id)&.synchrony_id
+
         attributes = {
           subject:         issue.subject,
           description:     issue.description,
-          start_date:      issue.start_date,
-          due_date:        issue.due_date,
           done_ratio:      issue.done_ratio,
           estimated_hours: issue.estimated_hours,
           updated_on:      issue.updated_on,
@@ -426,6 +427,7 @@ module Synchrony
           project_id:      target_project.id,
           tracker_id:      target_tracker.id,
           assigned_to_id:  target_assigned_to_id,
+          parent_issue_id: parent_issue_id,
           custom_fields:   custom_fields,
         }
 
@@ -438,6 +440,16 @@ module Synchrony
             issue.synchrony_id,
             params: { include: %i[journals attachments relations] }
           )
+
+          if remote_issue.respond_to?(:parent) && parent_issue_id.blank?
+            our_parent_issue = Issue.find_by(synchrony_id: remote_issue.parent.id)
+
+            our_parent_issue.skip_synchronization = true
+
+            attributes[:parent_issue_id] = remote_issue.parent.id
+
+            issue.update!(parent_id: our_parent_issue.id) if our_parent_issue.present?
+          end
 
           if remote_issue.update_attributes(attributes)
             issue.update_columns(synchronized_at: DateTime.current)
@@ -472,6 +484,9 @@ module Synchrony
             return
           end
         rescue ActiveResource::ResourceNotFound
+          attributes[:start_date] = issue.start_date
+          attributes[:due_date] = issue.due_date
+
           new_remote_issue = RemoteIssue.new(attributes)
 
           if new_remote_issue.save!
@@ -520,6 +535,7 @@ module Synchrony
           end
 
           remote_id = mapped_cf_data[:target_custom_field]
+
 
           if cfv.custom_field.field_format == "user" && cfv.custom_field.multiple
             users = local_users.select { |lu| cfv.value.include?(lu.id.to_s) }
