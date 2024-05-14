@@ -596,6 +596,7 @@ module Synchrony
             attributes[:status_id]            = issue_status_id
             attributes[:priority_id]          = issue_priority_id
             attributes[:assigned_to_id]       = assigned_to_id
+            attributes[:parent_id]            = parent_issue_id
             attributes[:custom_fields]        = custom_fields
 
             attributes[:author_id] = author_id if our_issue.blank?
@@ -621,16 +622,6 @@ module Synchrony
 
                 our_issue.update!(**attributes)
                 our_issue.update_columns(project_id: attributes[:project_id])
-
-                parent_id = if parent_issue_id.present?
-                              parent_issue_id
-                            elsif parent_issue_id.blank? && our_issue.parent_id.present?
-                              our_issue.parent_id
-                            else
-                              nil
-                            end
-
-                our_issue.update!(parent_id: parent_id) if parent_id.present?
               rescue ActiveRecord::RecordInvalid
                 Synchrony::Logger.info "Issue assignee replaced with default user."
                 Synchrony::Logger.info "Please add user #{our_issue.assigned_to.name} " \
@@ -833,6 +824,18 @@ module Synchrony
 
                 options[:value] = new_value&.customized_id || local_default_user_id
               when "child_id"
+                old_issue = Issue.find_by(synchrony_id: options[:old_value])
+
+                next if options[:old_value].present? && old_issue.blank?
+
+                options[:old_value] = old_issue&.id
+
+                new_issue = Issue.find_by(synchrony_id: options[:value])
+
+                next if options[:value].present? && new_issue.blank?
+
+                options[:value] = new_issue&.id
+              when "parent_id"
                 old_issue = Issue.find_by(synchrony_id: options[:old_value])
 
                 next if options[:old_value].present? && old_issue.blank?
