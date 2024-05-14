@@ -742,6 +742,11 @@ module Synchrony
         watchers_to_delete = incoming_remote_watchers_ids - current_watchers_remote_ids
         watchers_to_add = current_watchers_remote_ids - incoming_remote_watchers_ids
 
+        # keep B watchers that are not present in A
+        watchers_to_delete = watchers_to_delete.select do |id|
+          principal_custom_values.detect { |pcv| pcv.value == id }
+        end
+
         watchers_to_delete.each do |user_id|
           conn = Faraday.new(url: "#{target_site}issues/#{remote_issue.id}/watchers/#{user_id}.json") do |faraday|
             faraday.response :logger,
