@@ -606,6 +606,10 @@ module Synchrony
         incoming_relations = remote_issue.respond_to?(:relations) ? remote_issue.relations : []
         incoming_relations_attributes = incoming_relations.map(&:attributes)
 
+        Synchrony::Logger.info "Incoming relations attributes:"
+        Synchrony::Logger.info incoming_relations_attributes
+        Synchrony::Logger.info "================"
+
         incoming_remote_issue_to_ids = incoming_relations_attributes.pluck("issue_to_id")
         incoming_remote_issue_from_ids = incoming_relations_attributes.pluck("issue_id")
 
