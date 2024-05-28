@@ -15,6 +15,14 @@ if ENV["SYNC_ENABLED"] || Rails.env.production?
 
       Synchrony::Synchronize::Push.new(self).call
     end
+
+    def reschedule_on(date)
+      wd = working_duration
+      date = next_working_date(date)
+      self.start_date = date
+      self.due_date = add_working_days(date, wd)
+      self.skip_synchronization = true
+    end
   end
 
   Redmine::Plugin.register :redmine_synchrony do

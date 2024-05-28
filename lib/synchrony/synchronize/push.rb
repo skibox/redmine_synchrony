@@ -601,7 +601,7 @@ module Synchrony
       end
 
       def import_relations(our_issue, remote_issue)
-        Rails.logger.info "Updating relations for issue #{our_issue.id}:"
+        Synchrony::Logger.info "Updating relations for issue #{our_issue.id}:"
 
         incoming_relations = remote_issue.respond_to?(:relations) ? remote_issue.relations : []
         incoming_relations_attributes = incoming_relations.map(&:attributes)
@@ -622,7 +622,7 @@ module Synchrony
           end
 
           if incoming_our_issue_to.blank?
-            Rails.logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
+            Synchrony::Logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
 
             next
           end
@@ -632,7 +632,7 @@ module Synchrony
           end
 
           if incoming_our_issue_from.blank?
-            Rails.logger.info "Issue with Remote ID #{relation["issue_from_id"]} not found. Skipping."
+            Synchrony::Logger.info "Issue with Remote ID #{relation["issue_from_id"]} not found. Skipping."
 
             next
           end
@@ -665,12 +665,22 @@ module Synchrony
         current_relations_attributes = current_relations.sort_by do |r|
           "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
         end
+
+        Synchrony::Logger.info "================"
+        Synchrony::Logger.info "Mapped incoming relations attributes:"
+        Synchrony::Logger.info mapped_incoming_relations_attributes
+
+        Synchrony::Logger.info "Current relations attributes:"
+        Synchrony::Logger.info current_relations_attributes
+        Synchrony::Logger.info "================"
         
         return if mapped_incoming_relations_attributes == current_relations_attributes
 
-        
         relations_attributes_to_delete = mapped_incoming_relations_attributes - current_relations_attributes
         
+        Synchrony::Logger.info "Relations to delete:"
+        Synchrony::Logger.info relations_attributes_to_delete
+
         relations_attributes_to_delete.each do |attributes|
           remote_relation = incoming_relations.detect do |r|
             r.relation_type == attributes["relation_type"] &&
@@ -687,6 +697,9 @@ module Synchrony
                                       else
                                         current_relations_attributes
                                       end
+
+        Synchrony::Logger.info "Relations to add:"
+        Synchrony::Logger.info relations_attributes_to_add
 
         new_relations = relations_attributes_to_add.each do |attributes|
           conn = Faraday.new(url: "#{target_site}issues/#{attributes["issue_from_id"]}/relations.json") do |faraday|
@@ -715,7 +728,7 @@ module Synchrony
       end
 
       def import_watchers(our_issue, remote_issue)
-        Rails.logger.info "Updating watchers for issue #{our_issue.id}:"
+        Synchrony::Logger.info "Updating watchers for issue #{our_issue.id}:"
 
         remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :watchers })
 
@@ -742,10 +755,16 @@ module Synchrony
         watchers_to_delete = incoming_remote_watchers_ids - current_watchers_remote_ids
         watchers_to_add = current_watchers_remote_ids - incoming_remote_watchers_ids
 
+        Synchrony::Logger.info "Watchers to delete:"
+        Synchrony::Logger.info watchers_to_delete
+
         # keep B watchers that are not present in A
         watchers_to_delete = watchers_to_delete.select do |id|
           principal_custom_values.detect { |pcv| pcv.value == id }
         end
+
+        Synchrony::Logger.info "Filtered watchers to delete:"
+        Synchrony::Logger.info watchers_to_delete
 
         watchers_to_delete.each do |user_id|
           conn = Faraday.new(url: "#{target_site}issues/#{remote_issue.id}/watchers/#{user_id}.json") do |faraday|
@@ -762,6 +781,9 @@ module Synchrony
         end
 
         begin
+          Synchrony::Logger.info "Watchers to add:"
+          Synchrony::Logger.info watchers_to_add
+
           conn = Faraday.new(url: "#{target_site}issues/#{remote_issue.id}/watchers.json") do |faraday|
             faraday.response :logger,
                               Synchrony::Logger,

@@ -483,7 +483,7 @@ module Synchrony
               end
 
               unless custom_field_synchronizable?(our_custom_field)
-                Rails.logger.info "Custom field '#{our_custom_field.name}' is not synchronizable. Skipping."
+                Synchrony::Logger.info "Custom field '#{our_custom_field.name}' is not synchronizable. Skipping."
 
                 next
               end
@@ -1049,7 +1049,7 @@ module Synchrony
       end
 
       def update_relations(our_issue, remote_issue)
-        Rails.logger.info "Updating relations for issue #{our_issue.id}:"
+        Synchrony::Logger.info "Updating relations for issue #{our_issue.id}:"
 
         remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :relations })
 
@@ -1073,7 +1073,7 @@ module Synchrony
           end
 
           if incoming_our_issue_to.blank?
-            Rails.logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
+            Synchrony::Logger.info "Issue with Remote ID #{relation["issue_to_id"]} not found. Skipping."
 
             next
           end
@@ -1083,7 +1083,7 @@ module Synchrony
           end
 
           if incoming_our_issue_from.blank?
-            Rails.logger.info "Issue with Remote ID #{relation["issue_id"]} not found. Skipping."
+            Synchrony::Logger.info "Issue with Remote ID #{relation["issue_id"]} not found. Skipping."
 
             next
           end
@@ -1113,11 +1113,21 @@ module Synchrony
           "#{r["relation_type"]}-#{r["issue_from_id"]}-#{r["issue_to_id"]}"
         end
 
+        Synchrony::Logger.info "================"
+        Synchrony::Logger.info "Incoming relations attributes:"
+        Synchrony::Logger.info incoming_relations_attributes
+
+        Synchrony::Logger.info "Current relations attributes:"
+        Synchrony::Logger.info current_relations_attributes
+        Synchrony::Logger.info "================"
+
         return if incoming_relations_attributes == current_relations_attributes
 
         relations_attributes_to_delete = current_relations_attributes - incoming_relations_attributes
         relations_attributes_to_add = incoming_relations_attributes - current_relations_attributes
 
+        Synchrony::Logger.info "Relations to delete:"
+        Synchrony::Logger.info relations_attributes_to_delete
 
         relations_attributes_to_delete.each do |attributes|
           ir = IssueRelation.find_by(
@@ -1128,6 +1138,9 @@ module Synchrony
 
           ir&.destroy
         end
+
+        Synchrony::Logger.info "Relations to add:"
+        Synchrony::Logger.info relations_attributes_to_add
 
         relations_attributes_to_add.each do |attributes|
           IssueRelation.create!(
@@ -1140,7 +1153,7 @@ module Synchrony
       end
 
       def update_watchers(our_issue, remote_issue)
-        Rails.logger.info "Updating watchers for issue #{our_issue.id}:"
+        Synchrony::Logger.info "Updating watchers for issue #{our_issue.id}:"
 
         remote_issue = RemoteIssue.find(remote_issue.id, params: { include: :watchers })
 
@@ -1164,6 +1177,12 @@ module Synchrony
 
         watchers_to_delete = current_watchers_ids - our_watcher_ids
         watchers_to_add = our_watcher_ids - current_watchers_ids
+
+        Synchrony::Logger.info "Watchers to delete:"
+        Synchrony::Logger.info watchers_to_delete
+
+        Synchrony::Logger.info "Watchers to add:"
+        Synchrony::Logger.info watchers_to_add
 
         Watcher.where(watchable: our_issue, user_id: watchers_to_delete).delete_all
 
