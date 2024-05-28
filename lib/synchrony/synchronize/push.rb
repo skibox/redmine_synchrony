@@ -470,7 +470,7 @@ module Synchrony
 
             link_new_detailed_journal_entry(issue, remote_issue)
 
-            import_relations(issue, remote_issue)
+            # import_relations(issue, remote_issue)
 
             import_watchers(issue, remote_issue)
           else
